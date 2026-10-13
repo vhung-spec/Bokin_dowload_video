@@ -44,8 +44,8 @@ Nếu máy đã có sẵn `ffmpeg` hoặc `deno`/`node` trong PATH, app sẽ ưu
 python app.py
 ```
 
-Mở <http://127.0.0.1:8765>, dán link rồi bấm **Tải 15 giây đầu**. File sẽ tự tải về, kèm
-bản xem trước ngay trên trang.
+Mở <http://127.0.0.1:8765>, dán link rồi bấm **Tải 15 giây đầu**. File được lưu vào thư mục
+ở ô **Lưu vào**, kèm bản xem trước ngay trên trang.
 
 Các tuỳ chọn:
 
@@ -54,6 +54,13 @@ Các tuỳ chọn:
 - **Chất lượng**: 360p, 480p, 720p hoặc 1080p. Chất lượng thấp hơn thì tải nhanh hơn.
 - **Cắt chính xác từng khung hình**: encode lại để điểm cắt chính xác tuyệt đối (chậm hơn).
   Khi bắt đầu từ giây 0 thì không cần bật tuỳ chọn này.
+- **Lưu vào**: thư mục lưu video, dùng chung cho cả hai tab. Mặc định là `Downloads/Bokin Clip`.
+  - Bấm **Chọn…** để mở hộp thoại chọn thư mục. Hộp thoại có thể nằm sau cửa sổ trình duyệt,
+    nhìn xuống thanh tác vụ nếu không thấy.
+  - Hoặc gõ / dán đường dẫn đầy đủ vào ô rồi nhấn Enter, ví dụ `D:\Video\Clip`. Thư mục chưa
+    có sẽ được tạo.
+  - Bấm **Mở** để mở thư mục.
+  - App nhớ thư mục đã chọn cho các lần sau (trong file `settings.json` cạnh `app.py`).
 
 ### Tải nhiều video một lúc
 
@@ -61,12 +68,10 @@ Chọn tab **Nhiều video**, dán danh sách link (mỗi dòng một link; dán
 cũng được, app tự lọc ra link và bỏ link trùng), rồi bấm **Tải 15 giây đầu của N video**.
 
 - App tải 3 video cùng lúc và hiện trạng thái từng link: đang chờ, đang tải, xong hoặc lỗi.
-- File được **lưu thẳng vào thư mục `Downloads/Bokin Clip`** trên máy, không cần bấm lưu từng
-  file. Bấm **Mở thư mục** để xem.
+- File được **lưu thẳng vào thư mục ở ô "Lưu vào"**, không cần bấm lưu từng file. Bấm
+  **Mở thư mục** để xem.
 - **Dừng**: các video đang tải dở sẽ tải xong, các link còn lại thì dừng.
 - **Tải lại link lỗi**: chỉ tải lại các link bị lỗi hoặc đã dừng.
-- Đổi thư mục lưu bằng biến môi trường `BOKIN_OUTPUT_DIR`, ví dụ
-  `BOKIN_OUTPUT_DIR="D:\Clip" python app.py` (Windows: `set BOKIN_OUTPUT_DIR=D:\Clip` trước).
 
 Đổi cổng hoặc địa chỉ: `PORT=8080 HOST=0.0.0.0 python app.py`.
 
@@ -102,6 +107,10 @@ cục bộ.
   nhanh để tự cập nhật, hoặc chạy `pip install -U -r requirements.txt`.
 - **`Address already in use` / cổng 8765 bị chiếm**: chạy `PORT=8766 python app.py`, hoặc trên
   Windows `set PORT=8766` rồi `python app.py`.
+
+- **`Máy chưa có tkinter nên không mở được hộp thoại chọn thư mục`**: gõ hoặc dán đường dẫn
+  vào ô "Lưu vào" thay cho nút **Chọn…**. Python cài từ python.org (Windows, macOS) có sẵn
+  tkinter; trên Linux cài thêm gói `python3-tk`.
 
 ## Lưu ý
 

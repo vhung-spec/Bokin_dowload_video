@@ -61,9 +61,18 @@
     .result { margin-top: 16px; }
     .result video { width: 100%; border-radius: 8px; background: #000; }
     .result a { display: inline-block; margin-top: 8px; color: var(--accent); font-weight: 600; word-break: break-all; }
+    .field { margin-top: 16px; }
+    .folder-row { display: flex; gap: 8px; }
+    .folder-row input { flex: 1; min-width: 0; font-size: .9rem; }
+    .folder-row button { flex: none; }
+    .folder-status { min-height: 1.2em; }
+    .folder-status.error { color: var(--error); }
+    .saved { margin-top: 8px; font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+    .result-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .result-actions a { margin-top: 0; font-size: .85rem; font-weight: 400; color: var(--muted); }
     .batch-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
     .batch-head .actions { display: flex; gap: 8px; }
-    .folder { margin: 6px 0 12px; font-size: .8rem; color: var(--muted); word-break: break-all; }
+    .batch-head + .items { margin-top: 12px; }
     .items { list-style: none; margin: 0; padding: 0; }
     .item { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
     .badge {
@@ -126,13 +135,28 @@
 
     <label class="check"><input id="precise" name="precise" type="checkbox"> Cắt chính xác từng khung hình (chậm hơn)</label>
 
+    <div class="field">
+      <label for="folder">Lưu vào</label>
+      <div class="folder-row">
+        <input id="folder" name="folder" value="{{ output_dir }}" spellcheck="false" autocomplete="off"
+               title="Gõ hoặc dán đường dẫn thư mục, hoặc bấm Chọn…">
+        <button id="choose-folder" class="secondary" type="button">Chọn…</button>
+        <button id="open-folder" class="secondary" type="button">Mở</button>
+      </div>
+      <div id="folder-status" class="hint folder-status"></div>
+    </div>
+
     <button id="submit" class="primary" type="submit">Tải {{ default_duration }} giây đầu</button>
     <div id="status" class="status" role="status"></div>
   </form>
 
   <div id="result" class="result" hidden>
     <video id="preview" controls playsinline></video>
-    <a id="download" href="#">Lưu file</a>
+    <div class="saved">Đã lưu vào: <span id="saved-path"></span></div>
+    <div class="result-actions">
+      <button class="secondary open-folder" type="button">Mở thư mục</button>
+      <a id="download" href="#">Tải thêm một bản qua trình duyệt</a>
+    </div>
   </div>
 
   <section id="batch" class="result" hidden>
@@ -141,10 +165,9 @@
       <div class="actions">
         <button id="stop" class="secondary" type="button" hidden>Dừng</button>
         <button id="retry" class="secondary" type="button" hidden>Tải lại link lỗi</button>
-        <button id="open-folder" class="secondary" type="button">Mở thư mục</button>
+        <button class="secondary open-folder" type="button">Mở thư mục</button>
       </div>
     </div>
-    <div class="folder">Lưu vào: <span id="folder">{{ output_dir }}</span></div>
     <ol id="items" class="items"></ol>
   </section>
 </main>
@@ -231,6 +254,7 @@
     if (!response.ok) throw await errorFrom(response);
     const blob = await response.blob();
     const name = filenameFrom(response);
+    $("saved-path").textContent = decodeURIComponent(response.headers.get("X-Saved-Path") || name);
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = URL.createObjectURL(blob);
 
@@ -238,9 +262,7 @@
     const link = $("download");
     link.href = objectUrl;
     link.download = name;
-    link.textContent = `Lưu file: ${name}`;
     $("result").hidden = false;
-    link.click();
 
     const seconds = ((performance.now() - began) / 1000).toFixed(1);
     statusBox.textContent = `Xong sau ${seconds} giây (${(blob.size / 1048576).toFixed(1)} MB).`;
@@ -304,6 +326,7 @@
           if (!response.ok) throw await errorFrom(response);
           const data = await response.json();
           item.el.querySelector(".item-title").textContent = data.title || item.url;
+          item.el.title = data.path;
           setItem(item, "done", `${data.file} · ${(data.size / 1048576).toFixed(1)} MB`);
         } catch (error) {
           setItem(item, "error", error.message);
@@ -338,10 +361,59 @@
     button.disabled = false;
   });
 
-  $("open-folder").addEventListener("click", async () => {
-    const response = await postJson("/api/open-folder", {});
-    if (!response.ok) alert((await errorFrom(response)).message);
+  // ---- Thư mục lưu (dùng chung cho cả hai tab, server nhớ cho các lần sau) ----
+
+  let savedFolder = $("folder").value;
+
+  function folderMessage(text, isError = false) {
+    $("folder-status").textContent = text;
+    $("folder-status").className = isError ? "hint folder-status error" : "hint folder-status";
+  }
+
+  async function useFolderResponse(response) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Lỗi máy chủ (${response.status})`);
+    if (data.cancelled) return;
+    $("folder").value = savedFolder = data.folder;
+    folderMessage("Đã đổi thư mục lưu.");
+  }
+
+  // Áp dụng đường dẫn đang gõ trong ô (nếu đã đổi); trả về false nếu đường dẫn không dùng được.
+  async function applyFolder() {
+    if ($("folder").value.trim() === savedFolder) return true;
+    try {
+      await useFolderResponse(await postJson("/api/folder", { folder: $("folder").value }));
+      return true;
+    } catch (error) {
+      folderMessage(error.message, true);
+      return false;
+    }
+  }
+  $("folder").addEventListener("change", applyFolder);
+  $("folder").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); applyFolder(); }
   });
+
+  $("choose-folder").addEventListener("click", async () => {
+    $("choose-folder").disabled = true;
+    folderMessage("Đang mở hộp thoại chọn thư mục (có thể nằm sau cửa sổ trình duyệt)…");
+    try {
+      await useFolderResponse(await postJson("/api/choose-folder", {}));
+      if ($("folder-status").textContent.startsWith("Đang mở")) folderMessage("");
+    } catch (error) {
+      folderMessage(error.message, true);
+    } finally {
+      $("choose-folder").disabled = false;
+    }
+  });
+
+  async function openFolder() {
+    if (!(await applyFolder())) return;
+    const response = await postJson("/api/open-folder", {});
+    if (!response.ok) folderMessage((await errorFrom(response)).message, true);
+  }
+  $("open-folder").addEventListener("click", openFolder);
+  document.querySelectorAll(".open-folder").forEach((el) => el.addEventListener("click", openFolder));
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -350,6 +422,7 @@
     statusBox.className = "status";
     statusBox.textContent = "";
     try {
+      if (!(await applyFolder())) throw new Error("Thư mục lưu không dùng được, xem thông báo ở ô \"Lưu vào\".");
       await (mode === "one" ? downloadOne() : downloadMany());
     } catch (error) {
       statusBox.className = "status error";
