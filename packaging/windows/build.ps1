@@ -3,10 +3,14 @@
   viện (pip), code app và file chạy "BokinClip.exe". Inno Setup (installer.iss) đóng gói thư mục
   này thành bộ cài. Python nhúng vẫn có pip, nên app tự cập nhật yt-dlp sau khi cài.
 
-  Chạy trên Windows (GitHub Actions dùng windows-latest):
-      pwsh packaging/windows/build.ps1 -PythonVersion 3.13.8
+  Chạy trên Windows (GitHub Actions dùng windows-latest), với một Python đầy đủ cùng phiên bản
+  (dùng để dựng wheel cho các gói chỉ có mã nguồn):
+      pwsh packaging/windows/build.ps1 -PythonVersion 3.13.8 [-BuildPython python]
 #>
-param([Parameter(Mandatory)] [string] $PythonVersion)
+param(
+    [Parameter(Mandatory)] [string] $PythonVersion,
+    [string] $BuildPython = "python"
+)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"  # Invoke-WebRequest chậm hơn rất nhiều khi hiện thanh tiến độ
@@ -37,8 +41,13 @@ Write-Host "== pip và thư viện"
 $getPip = Join-Path $tmp "get-pip.py"
 Invoke-WebRequest "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip
 Invoke-Native "$py\python.exe" @($getPip, "--no-warn-script-location", "-q")
-Invoke-Native "$py\python.exe" @("-m", "pip", "install", "--no-warn-script-location", "-q",
-    "-r", (Join-Path $root "requirements.txt"), "-r", (Join-Path $root "requirements-desktop.txt"))
+# Python nhúng không tự dựng được gói chỉ có mã nguồn (vd. proxy_tools của pywebview): dựng sẵn
+# mọi gói thành wheel bằng Python đầy đủ, rồi cài từ thư mục wheel đó.
+$requirements = @("-r", (Join-Path $root "requirements.txt"), "-r", (Join-Path $root "requirements-desktop.txt"))
+$wheels = Join-Path $tmp "wheels"
+Invoke-Native $BuildPython (@("-m", "pip", "wheel", "-q", "-w", $wheels) + $requirements)
+Invoke-Native "$py\python.exe" (@("-m", "pip", "install", "--no-warn-script-location", "-q",
+    "--no-index", "--find-links", $wheels) + $requirements)
 
 Write-Host "== Code app"
 foreach ($file in "app.py", "clipper.py", "desktop.py", "requirements.txt") {
@@ -56,6 +65,5 @@ Invoke-Native $rcedit @($exe, "--set-icon", (Join-Path $root "assets\bokin.ico")
     "--set-version-string", "FileDescription", "Bokin Clip",
     "--set-version-string", "ProductName", "Bokin Clip")
 
-Get-ChildItem $app -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 $size = (Get-ChildItem $app -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
 Write-Host ("== Xong: {0} ({1:N0} MB)" -f $app, $size)

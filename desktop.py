@@ -116,8 +116,10 @@ def update_ytdlp() -> str:
     if time.time() - _load_settings().get("last_update_check", 0) < UPDATE_EVERY:
         return "bỏ qua (vừa kiểm tra gần đây)"
     python = Path(sys.executable).with_name("python.exe")  # bản có console để pip chạy bình thường
+    # --only-binary: Python nhúng không dựng được gói từ mã nguồn, đừng để pip thử.
     cmd = [str(python if python.exists() else sys.executable), "-m", "pip", "install", "-q", "-U",
-           "--disable-pip-version-check", "--no-warn-script-location", _ytdlp_requirement()]
+           "--only-binary", ":all:", "--disable-pip-version-check", "--no-warn-script-location",
+           _ytdlp_requirement()]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                 timeout=180, **NO_WINDOW)
@@ -205,10 +207,14 @@ def run_in_window(args: set[str]) -> int:
             log(f"app {web.APP_VERSION} chạy tại {url}")
             window.load_url(url + "?desktop=1")
             if "--smoke-test-window" in args:
-                window.events.loaded.wait(60)
-                time.sleep(2)
-                title = window.evaluate_js("document.title + ' | ' + !!document.getElementById('folder')")
-                print(f"smoke test window ok: {title}", flush=True)
+                for _ in range(60):  # chờ giao diện thật (có ô "Lưu vào") thay cho màn hình chờ
+                    time.sleep(1)
+                    if window.evaluate_js("!!document.getElementById('folder')"):
+                        print(f"smoke test window ok: {window.evaluate_js('document.title')}", flush=True)
+                        break
+                else:
+                    failed.append("giao diện không nạp được trong 60 giây")
+                    print("smoke test window FAILED", flush=True)
                 window.destroy()
         except Exception:
             error = traceback.format_exc()
