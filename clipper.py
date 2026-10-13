@@ -468,6 +468,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-o", "--output", default="downloads", help="thư mục lưu, mặc định ./downloads")
     parser.add_argument("--precise", action="store_true", help="cắt chính xác từng khung hình (encode lại, chậm hơn)")
     args = parser.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):  # đầu ra bị chuyển hướng trên Windows mặc định là cp1252
+        with contextlib.suppress(AttributeError, ValueError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
     urls = list(args.urls)
     if args.file:

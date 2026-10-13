@@ -50,6 +50,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
           build\app\python\python.exe build\app\desktop.py --smoke-test-window --no-update 2>&1 | Tee-Object build\window-test.log
           exit $LASTEXITCODE
 
@@ -58,7 +59,8 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         run: |
-          build\app\python\python.exe build\app\clipper.py "https://www.youtube.com/watch?v=BaW_jenozKc" -d 5 -o build\yt-test 2>&1 | Tee-Object build\youtube-test.log
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          build\app\python\python.exe build\app\clipper.py "https://www.youtube.com/watch?v=jNQXAC9IVRw" -d 5 -o build\yt-test 2>&1 | Tee-Object build\youtube-test.log
           exit $LASTEXITCODE
 
       - name: Đóng gói bộ cài (Inno Setup)
@@ -77,6 +79,7 @@ jobs:
       - name: Thử cài đặt, chạy rồi gỡ bộ cài
         shell: pwsh
         run: |
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
           $setup = (Get-ChildItem dist\BokinClip-Setup-*.exe | Select-Object -First 1).FullName
           Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
           $dir = "$env:LOCALAPPDATA\Programs\Bokin Clip"
@@ -101,6 +104,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
           "== Cửa sổ app: ${{ steps.window.outcome }}"
           Get-Content build\window-test.log -ErrorAction SilentlyContinue | Select-Object -Last 40
           "== Tải YouTube thật: ${{ steps.youtube.outcome }}"

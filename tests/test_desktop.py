@@ -1,4 +1,6 @@
+import io
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -83,3 +85,15 @@ def test_desktop_page_hides_browser_download_and_shows_versions():
 
 def test_smoke_test_starts_server():
     assert desktop.smoke_test() == 0
+
+
+def test_log_never_crashes_on_non_utf8_console(monkeypatch):
+    # Như khi chạy python.exe với đầu ra bị chuyển hướng trên Windows: bảng mã cp1252.
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(sys, "stderr", stream)
+    desktop.log("app chạy tại http://127.0.0.1")  # không được ném lỗi
+    desktop._redirect_output()
+    desktop.log("đã chuyển sang UTF-8")
+    stream.flush()
+    assert "đã chuyển sang UTF-8".encode() in stream.buffer.getvalue()

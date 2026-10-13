@@ -61,12 +61,22 @@ ERROR_PAGE = """<!doctype html>
 
 
 def log(message: str) -> None:
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
+    try:
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
+    except Exception:
+        pass  # ghi log không bao giờ được làm hỏng app
 
 
 def _redirect_output() -> None:
     """pythonw không có cửa sổ dòng lệnh (sys.stdout là None): ghi log ra file để còn tra lỗi."""
     if sys.stdout is not None and sys.stderr is not None:
+        # Chạy bằng python.exe với đầu ra bị chuyển hướng (vd. khi build): bảng mã mặc định của
+        # Windows (cp1252) không ghi được chữ tiếng Việt.
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
         return
     try:
         if LOG_FILE.exists() and LOG_FILE.stat().st_size > 1 << 20:
@@ -190,8 +200,10 @@ def run_in_window(args: set[str]) -> int:
 
         def watchdog():  # đừng treo mãi khi build: báo đang kẹt ở bước nào rồi thoát
             time.sleep(120)
-            print(f"smoke test window TIMEOUT, đang ở bước: {stage[0]}", flush=True)
-            os._exit(2)
+            try:
+                log(f"smoke test window TIMEOUT, đang ở bước: {stage[0]}")
+            finally:
+                os._exit(2)
 
         threading.Thread(target=watchdog, daemon=True).start()
 
