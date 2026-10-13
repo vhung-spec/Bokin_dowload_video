@@ -10,7 +10,31 @@ dài 2 phút hay 2 tiếng thì thời gian tải 15 giây vẫn như nhau.
 Nếu cách đó bị YouTube chặn, app tự thử lần lượt: để ffmpeg tự đọc đoạn cần từ link stream,
 rồi dùng client "android" của YouTube (thường chỉ có 360p).
 
-## Chạy trên máy tính (cách nhanh nhất)
+## Cài đặt trên Windows (khuyên dùng)
+
+1. Tải file **`BokinClip-Setup-<phiên bản>.exe`**: trong mục **Releases** của repo, hoặc mục
+   **Actions › Windows app › (lần chạy mới nhất) › Artifacts**.
+2. Bấm đúp để cài. Không cần quyền admin, không cần cài Python hay gì khác: Python, ffmpeg và
+   Deno đều đi kèm. Bộ cài chưa được ký số nên lần đầu Windows có thể hiện **"Windows protected
+   your PC"**: bấm **More info › Run anyway**.
+3. Mở **Bokin Clip** từ biểu tượng ở Desktop hoặc Start Menu. App chạy trong cửa sổ riêng, không
+   cần trình duyệt, không có cửa sổ dòng lệnh.
+
+- Mỗi lần mở (tối đa 6 giờ một lần), app tự cập nhật yt-dlp để theo kịp các thay đổi của YouTube.
+- Gỡ cài đặt: **Settings › Apps › Bokin Clip › Uninstall**. Video đã tải không bị xoá.
+- Cài bản mới: chạy bộ cài mới đè lên, thư mục lưu đã chọn vẫn được giữ.
+- App cần WebView2 (có sẵn trên Windows 11 và Windows 10 đã cập nhật). Máy nào thiếu thì app tự
+  mở bằng trình duyệt thay cho cửa sổ riêng.
+- Lỗi khi khởi động: xem file `%LOCALAPPDATA%\Programs\Bokin Clip\bokin.log`.
+
+### Build bộ cài
+
+GitHub Actions (`.github/workflows/windows.yml`) tự build mỗi lần đẩy code: chạy test trên
+Windows, tạo Python nhúng kèm thư viện (`packaging/windows/build.ps1`), đóng gói bằng Inno Setup
+(`packaging/windows/installer.iss`), rồi thử cài / chạy / gỡ bộ cài. Đẩy tag `v<phiên bản>`
+(khớp `APP_VERSION` trong `app.py`) thì tạo thêm một GitHub Release kèm bộ cài.
+
+## Chạy từ mã nguồn (Windows, macOS, Linux)
 
 Chỉ cần cài **Python 3.10 trở lên** (<https://www.python.org/downloads/>; trên Windows nhớ tick
 **"Add python.exe to PATH"** khi cài). ffmpeg và Deno đã đi kèm qua pip, không cần cài riêng.

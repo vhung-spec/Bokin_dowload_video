@@ -17,10 +17,12 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from urllib.parse import quote
 
+import yt_dlp.version
 from flask import Flask, jsonify, render_template, request, send_file
 
 from clipper import (
@@ -34,7 +36,9 @@ from clipper import (
     validate_youtube_url,
 )
 
+APP_VERSION = "1.0.0"
 SETTINGS_FILE = Path(__file__).with_name("settings.json")
+NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 
 def _load_settings() -> dict:
@@ -56,6 +60,22 @@ OUTPUT_DIR = _initial_output_dir()
 
 app = Flask(__name__)
 
+# Dùng khi app chạy trong trình duyệt thay vì cửa sổ riêng (desktop.py): biết lúc nào trang đã đóng.
+_last_request = time.monotonic()
+_active_downloads = 0
+_activity_lock = threading.Lock()
+
+
+@app.before_request
+def _touch():
+    global _last_request
+    _last_request = time.monotonic()
+
+
+def idle_seconds() -> float:
+    """Số giây không có request nào (trang mở thì gửi /api/ping 30 giây một lần); 0 khi đang tải."""
+    return 0 if _active_downloads else time.monotonic() - _last_request
+
 
 @app.get("/")
 def index():
@@ -66,7 +86,15 @@ def index():
         qualities=QUALITIES,
         default_quality=DEFAULT_QUALITY,
         output_dir=str(OUTPUT_DIR),
+        desktop=request.args.get("desktop") == "1",
+        version=APP_VERSION,
+        ytdlp_version=yt_dlp.version.__version__,
     )
+
+
+@app.get("/api/ping")
+def ping():
+    return jsonify(ok=True)
 
 
 def _clip_options(data) -> tuple[str, dict]:
@@ -87,7 +115,18 @@ def _clip_options(data) -> tuple[str, dict]:
 
 def _download_to_output(data):
     """Tải đoạn video rồi chuyển vào OUTPUT_DIR. Trả về (đường dẫn file, Clip)."""
+    global _active_downloads
     url, options = _clip_options(data)
+    with _activity_lock:
+        _active_downloads += 1
+    try:
+        return _download_and_move(url, options)
+    finally:
+        with _activity_lock:
+            _active_downloads -= 1
+
+
+def _download_and_move(url: str, options: dict):
     folder = OUTPUT_DIR
     # Tải trong thư mục tạm rồi mới chuyển sang, để thư mục lưu không dính file dở dang.
     with tempfile.TemporaryDirectory(prefix="bokin-") as tmp:
@@ -189,7 +228,7 @@ def _ask_folder(initial: Path) -> str | None:
         result = subprocess.run(
             [sys.executable, "-c", _PICKER, str(initial if initial.is_dir() else Path.home())],
             capture_output=True, text=True, encoding="utf-8", timeout=600,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **NO_WINDOW,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         raise ClipError(f"Không mở được hộp thoại chọn thư mục: {e}") from e

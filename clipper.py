@@ -55,6 +55,8 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _OUTTMPL = "%(title).80B [%(id)s] %(section_start)ds-%(section_end)ds.%(ext)s"
 _CHUNK_SIZE = 10 << 20  # YouTube chặn request lớn hơn ~10MB; yt-dlp cũng chia nhỏ như vậy
 _HEADER_GUESS = 64 << 10  # ftyp + moov + sidx của YouTube thường chỉ vài KB
+# Bản cài đặt chạy không có cửa sổ dòng lệnh: đừng để ffmpeg bật lên một cửa sổ đen.
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 
 class ClipError(Exception):
@@ -408,7 +410,7 @@ def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section) -> 
         cmd += ["-c", "copy"]
     cmd += ["-movflags", "+faststart", str(out_path)]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **_NO_WINDOW)
     if result.returncode != 0 or not out_path.is_file() or out_path.stat().st_size == 0:
         detail = (result.stderr.strip().splitlines() or [_ffmpeg_error(result.returncode)])[-1]
         raise ClipError(f"ffmpeg không cắt được video: {detail}")

@@ -4,16 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bokin Clip</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
   <style>
     :root {
       --bg: #f6f7f9; --card: #ffffff; --text: #1d2129; --muted: #5f6673;
-      --border: #d9dde3; --accent: #e5322d; --accent-text: #ffffff; --error: #b42318;
+      --border: #d9dde3; --accent: #4f46e5; --accent-text: #ffffff; --error: #b42318;
       --ok: #157f3c; --tab: #eceef2;
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #14161a; --card: #1e2127; --text: #e8eaed; --muted: #9aa0a6;
-        --border: #343842; --accent: #ff4e45; --accent-text: #ffffff; --error: #ff8a80;
+        --border: #343842; --accent: #5850ec; --accent-text: #ffffff; --error: #ff8a80;
         --ok: #6dd58c; --tab: #262a31;
       }
     }
@@ -86,6 +87,7 @@
     .item-title { font-size: .9rem; overflow-wrap: anywhere; }
     .item-detail { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
     .item[data-state="error"] .item-detail { color: var(--error); }
+    footer { margin-top: 20px; text-align: center; font-size: .75rem; color: var(--muted); }
     @media (max-width: 420px) { .row { grid-template-columns: 1fr 1fr; } .row > :last-child { grid-column: span 2; } }
   </style>
 </head>
@@ -155,7 +157,7 @@
     <div class="saved">Đã lưu vào: <span id="saved-path"></span></div>
     <div class="result-actions">
       <button class="secondary open-folder" type="button">Mở thư mục</button>
-      <a id="download" href="#">Tải thêm một bản qua trình duyệt</a>
+      <a id="download" href="#" {% if desktop %}hidden{% endif %}>Tải thêm một bản qua trình duyệt</a>
     </div>
   </div>
 
@@ -170,6 +172,7 @@
     </div>
     <ol id="items" class="items"></ol>
   </section>
+  <footer>Bokin Clip {{ version }} · yt-dlp {{ ytdlp_version }}</footer>
 </main>
 
 <script>
@@ -396,8 +399,14 @@
 
   $("choose-folder").addEventListener("click", async () => {
     $("choose-folder").disabled = true;
-    folderMessage("Đang mở hộp thoại chọn thư mục (có thể nằm sau cửa sổ trình duyệt)…");
     try {
+      if (window.pywebview && window.pywebview.api) {
+        // Trong cửa sổ app (desktop.py): dùng hộp thoại chọn thư mục của Windows.
+        const picked = await window.pywebview.api.choose_folder($("folder").value);
+        if (picked) await useFolderResponse(await postJson("/api/folder", { folder: picked }));
+        return;
+      }
+      folderMessage("Đang mở hộp thoại chọn thư mục (có thể nằm sau cửa sổ trình duyệt)…");
       await useFolderResponse(await postJson("/api/choose-folder", {}));
       if ($("folder-status").textContent.startsWith("Đang mở")) folderMessage("");
     } catch (error) {
@@ -431,6 +440,9 @@
       button.disabled = false;
     }
   });
+
+  // Báo cho app biết trang vẫn đang mở (khi chạy bằng trình duyệt, app tự tắt sau khi trang đóng).
+  setInterval(() => fetch("/api/ping").catch(() => {}), 30000);
 
   let savedMode = "one";
   try { savedMode = localStorage.getItem("bokin-mode") || "one"; } catch {}
