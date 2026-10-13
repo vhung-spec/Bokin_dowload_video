@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bokin Clip</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #ffffff; --text: #1d2129; --muted: #5f6673;
+      --border: #d9dde3; --accent: #e5322d; --accent-text: #ffffff; --error: #b42318;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14161a; --card: #1e2127; --text: #e8eaed; --muted: #9aa0a6;
+        --border: #343842; --accent: #ff4e45; --accent-text: #ffffff; --error: #ff8a80;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; justify-content: center; padding: 40px 16px;
+    }
+    main { width: 100%; max-width: 560px; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    p.sub { color: var(--muted); margin: 0 0 24px; }
+    form, .result {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    }
+    label { display: block; font-size: .875rem; color: var(--muted); margin-bottom: 4px; }
+    input, select {
+      width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .check { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: .875rem; }
+    .check input { width: auto; }
+    button {
+      width: 100%; margin-top: 20px; padding: 12px; font: inherit; font-weight: 600; cursor: pointer;
+      color: var(--accent-text); background: var(--accent); border: 0; border-radius: 8px;
+    }
+    button:disabled { opacity: .6; cursor: progress; }
+    .status { margin-top: 12px; min-height: 1.5em; font-size: .9rem; color: var(--muted); }
+    .status.error { color: var(--error); }
+    .result { margin-top: 16px; }
+    .result video { width: 100%; border-radius: 8px; background: #000; }
+    .result a { display: inline-block; margin-top: 8px; color: var(--accent); font-weight: 600; word-break: break-all; }
+    @media (max-width: 420px) { .row { grid-template-columns: 1fr 1fr; } .row > :last-child { grid-column: span 2; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tải nhanh đoạn đầu video YouTube</h1>
+  <p class="sub">Chỉ tải đúng đoạn cần, không tải cả video, nên xong sau vài giây.</p>
+
+  <form id="form">
+    <label for="url">Link YouTube</label>
+    <input id="url" name="url" type="url" required autofocus
+           placeholder="https://www.youtube.com/watch?v=...">
+
+    <div class="row">
+      <div>
+        <label for="start">Bắt đầu</label>
+        <input id="start" name="start" value="0" placeholder="0 hoặc 1:30" title="Số giây hoặc mm:ss">
+      </div>
+      <div>
+        <label for="duration">Độ dài (giây)</label>
+        <input id="duration" name="duration" type="number" min="1" max="{{ max_duration }}" step="any"
+               value="{{ default_duration }}">
+      </div>
+      <div>
+        <label for="quality">Chất lượng</label>
+        <select id="quality" name="quality">
+          {% for q in qualities %}
+          <option value="{{ q }}" {% if q == default_quality %}selected{% endif %}>{{ q }}p</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <label class="check"><input id="precise" name="precise" type="checkbox"> Cắt chính xác từng khung hình (chậm hơn)</label>
+
+    <button id="submit" type="submit">Tải {{ default_duration }} giây đầu</button>
+    <div id="status" class="status" role="status"></div>
+  </form>
+
+  <div id="result" class="result" hidden>
+    <video id="preview" controls playsinline></video>
+    <a id="download" href="#">Lưu file</a>
+  </div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const form = $("form"), button = $("submit"), statusBox = $("status");
+  let objectUrl = null;
+
+  function updateButton() {
+    const start = $("start").value.trim();
+    const duration = $("duration").value || "{{ default_duration }}";
+    button.textContent = (start === "" || start === "0")
+      ? `Tải ${duration} giây đầu`
+      : `Tải ${duration} giây từ ${start}`;
+  }
+  $("start").addEventListener("input", updateButton);
+  $("duration").addEventListener("input", updateButton);
+
+  function filenameFrom(response) {
+    const header = response.headers.get("Content-Disposition") || "";
+    const star = header.match(/filename\*=UTF-8''([^;]+)/i);
+    if (star) return decodeURIComponent(star[1]);
+    const plain = header.match(/filename="?([^";]+)"?/i);
+    return plain ? plain[1] : "clip.mp4";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    statusBox.className = "status";
+    statusBox.textContent = "Đang tải đoạn video…";
+    const began = performance.now();
+
+    try {
+      const response = await fetch("/api/clip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: $("url").value,
+          start: $("start").value,
+          duration: $("duration").value,
+          quality: $("quality").value,
+          precise: $("precise").checked,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Lỗi máy chủ (${response.status})`);
+      }
+      const blob = await response.blob();
+      const name = filenameFrom(response);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+
+      $("preview").src = objectUrl;
+      const link = $("download");
+      link.href = objectUrl;
+      link.download = name;
+      link.textContent = `Lưu file: ${name}`;
+      $("result").hidden = false;
+      link.click();
+
+      const seconds = ((performance.now() - began) / 1000).toFixed(1);
+      statusBox.textContent = `Xong sau ${seconds} giây (${(blob.size / 1048576).toFixed(1)} MB).`;
+    } catch (error) {
+      statusBox.className = "status error";
+      statusBox.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
