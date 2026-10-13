@@ -3,8 +3,12 @@
 Dán link YouTube, bấm nút, nhận file `.mp4` của 15 giây đầu (hoặc bất kỳ đoạn nào bạn chọn).
 
 **Vì sao nhanh?** App không tải cả video rồi mới cắt. [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-lấy link stream trực tiếp, rồi `ffmpeg` chỉ đọc đúng khoảng thời gian cần và copy nguyên
-stream (không encode lại). Video dài 2 phút hay 2 tiếng thì thời gian tải 15 giây vẫn như nhau.
+lấy link stream, app đọc bảng mục lục ở đầu stream rồi chỉ tải đúng các khúc chứa đoạn cần
+lấy (vài MB). Sau đó `ffmpeg` ghép hình với tiếng và cắt ngay trên máy, không encode lại. Video
+dài 2 phút hay 2 tiếng thì thời gian tải 15 giây vẫn như nhau.
+
+Nếu cách đó bị YouTube chặn, app tự thử lần lượt: để ffmpeg tự đọc đoạn cần từ link stream,
+rồi dùng client "android" của YouTube (thường chỉ có 360p).
 
 ## Chạy trên máy tính (cách nhanh nhất)
 
@@ -73,6 +77,9 @@ cục bộ.
 
 ## Xử lý sự cố
 
+- **`YouTube đang chặn tải video này (lỗi 403)`**: YouTube từ chối cả ba cách tải. Thường là
+  tạm thời: thử lại sau vài phút, hoặc chọn chất lượng thấp hơn. Tắt rồi mở lại app bằng file
+  chạy nhanh để cập nhật yt-dlp, vì yt-dlp hay ra bản sửa lỗi 403 mới.
 - **`Không tải được video: ... Sign in to confirm you're not a bot`**: YouTube đang chặn IP
   của bạn. Thử lại sau, hoặc chạy app ở mạng khác.
 - **Bất kỳ lỗi lạ nào khác từ YouTube** (ví dụ lỗi `n challenge`, `Requested format is not

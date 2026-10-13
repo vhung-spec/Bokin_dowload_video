@@ -1,4 +1,6 @@
-yt-dlp[default]>=2025.11.12
+# Bản nightly của yt-dlp (ghi rõ ".dev0" để pip chỉ lấy bản thử nghiệm cho riêng yt-dlp):
+# YouTube đổi cơ chế liên tục và bản nightly sửa lỗi sớm hơn bản ổn định nhiều tuần.
+yt-dlp[default]>=2026.10.10.dev0
 flask>=3.0
 # ffmpeg và Deno đi kèm, máy không cần cài riêng
 imageio-ffmpeg>=0.5
