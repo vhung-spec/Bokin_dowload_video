@@ -6,13 +6,25 @@ Dán link YouTube, bấm nút, nhận file `.mp4` của 15 giây đầu (hoặc 
 lấy link stream trực tiếp, rồi `ffmpeg` chỉ đọc đúng khoảng thời gian cần và copy nguyên
 stream (không encode lại). Video dài 2 phút hay 2 tiếng thì thời gian tải 15 giây vẫn như nhau.
 
-## Cài đặt
+## Chạy trên máy tính (cách nhanh nhất)
 
-Cần có:
+Chỉ cần cài **Python 3.10 trở lên** (<https://www.python.org/downloads/>; trên Windows nhớ tick
+**"Add python.exe to PATH"** khi cài). ffmpeg và Deno đã đi kèm qua pip, không cần cài riêng.
 
-- Python 3.10 trở lên
-- [ffmpeg](https://ffmpeg.org/download.html) (`sudo apt install ffmpeg`, `brew install ffmpeg`, hoặc `winget install ffmpeg`)
-- Một JavaScript runtime để yt-dlp giải mã link YouTube: [Deno](https://deno.com/) (khuyên dùng) hoặc Node.js
+1. Giải nén thư mục app vào chỗ bạn muốn.
+2. Bấm đúp file chạy:
+   - **Windows:** `chay-app.bat`
+   - **macOS:** `chay-app.command`. Lần đầu macOS có thể chặn; khi đó bấm chuột phải, chọn
+     **Open**, rồi chọn **Open** lần nữa. Nếu báo không có quyền chạy, mở Terminal trong thư mục
+     app và gõ `chmod +x chay-app.command`.
+   - **Linux:** `bash chay-app.command`
+3. Lần đầu sẽ mất 1-2 phút để tự cài thư viện vào thư mục `.venv`. Sau đó trình duyệt tự mở
+   <http://127.0.0.1:8765>. Các lần sau mở gần như ngay lập tức.
+
+Giữ cửa sổ dòng lệnh mở trong lúc dùng app; đóng cửa sổ đó là tắt app. Mỗi lần mở, file chạy
+cũng tự cập nhật yt-dlp để theo kịp các thay đổi của YouTube.
+
+## Cài đặt thủ công
 
 ```bash
 python -m venv .venv
@@ -20,13 +32,15 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+Nếu máy đã có sẵn `ffmpeg` hoặc `deno`/`node` trong PATH, app sẽ ưu tiên dùng bản đó.
+
 ## Dùng giao diện web
 
 ```bash
 python app.py
 ```
 
-Mở <http://127.0.0.1:5000>, dán link rồi bấm **Tải 15 giây đầu**. File sẽ tự tải về, kèm
+Mở <http://127.0.0.1:8765>, dán link rồi bấm **Tải 15 giây đầu**. File sẽ tự tải về, kèm
 bản xem trước ngay trên trang.
 
 Các tuỳ chọn:
@@ -61,10 +75,11 @@ cục bộ.
 
 - **`Không tải được video: ... Sign in to confirm you're not a bot`**: YouTube đang chặn IP
   của bạn. Thử lại sau, hoặc chạy app ở mạng khác.
-- **Lỗi về JavaScript runtime / `n challenge`**: cài Deno hoặc Node.js, rồi cập nhật yt-dlp:
-  `pip install -U "yt-dlp[default]"`.
-- **Bất kỳ lỗi lạ nào khác từ YouTube**: yt-dlp cập nhật rất thường xuyên để theo kịp YouTube,
-  hãy chạy `pip install -U "yt-dlp[default]"` trước tiên.
+- **Bất kỳ lỗi lạ nào khác từ YouTube** (ví dụ lỗi `n challenge`, `Requested format is not
+  available`): yt-dlp cập nhật rất thường xuyên để theo kịp YouTube. Mở lại app bằng file chạy
+  nhanh để tự cập nhật, hoặc chạy `pip install -U -r requirements.txt`.
+- **`Address already in use` / cổng 8765 bị chiếm**: chạy `PORT=8766 python app.py`, hoặc trên
+  Windows `set PORT=8766` rồi `python app.py`.
 
 ## Lưu ý
 

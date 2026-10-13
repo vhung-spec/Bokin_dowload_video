@@ -1,13 +1,17 @@
 """Giao diện web: dán link YouTube, bấm nút, nhận file mp4 của đoạn đã cắt.
 
-Chạy:  python app.py   rồi mở http://127.0.0.1:5000
+Chạy:  python app.py   rồi mở http://127.0.0.1:8765  (thêm --open để tự mở trình duyệt)
 """
 
 from __future__ import annotations
 
 import io
+import logging
 import os
+import sys
 import tempfile
+import threading
+import webbrowser
 
 from flask import Flask, jsonify, render_template, request, send_file
 
@@ -63,4 +67,10 @@ def clip():
 
 
 if __name__ == "__main__":
-    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "5000")))
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8765"))
+    if "--open" in sys.argv:  # dùng bởi file chạy nhanh: tự mở trình duyệt khi server sẵn sàng
+        threading.Timer(1.0, webbrowser.open, [f"http://127.0.0.1:{port}"]).start()
+    print(f"Bokin Clip đang chạy tại http://127.0.0.1:{port}  (đóng cửa sổ này để tắt)")
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)  # app chạy trên máy cá nhân, bỏ log từng request
+    app.run(host=host, port=port)

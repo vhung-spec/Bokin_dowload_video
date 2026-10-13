@@ -1,2 +1,5 @@
 yt-dlp[default]>=2025.11.12
 flask>=3.0
+# ffmpeg và Deno đi kèm, máy không cần cài riêng
+imageio-ffmpeg>=0.5
+deno>=2.0

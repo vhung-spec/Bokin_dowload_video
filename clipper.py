@@ -16,12 +16,14 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
+from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
 
 DEFAULT_DURATION = 15
 MAX_DURATION = 300
@@ -80,6 +82,32 @@ def parse_seconds(value: str | float | int | None, default: float = 0) -> float:
     return seconds
 
 
+def _ffmpeg_location() -> str | None:
+    """ffmpeg của máy nếu có, không thì dùng bản đi kèm gói imageio-ffmpeg."""
+    if shutil.which("ffmpeg"):
+        return None
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, RuntimeError):
+        return None
+
+
+def _js_runtimes() -> dict:
+    """YouTube cần một JavaScript runtime để giải mã link stream; dùng Deno/Node của máy
+    hoặc Deno đi kèm gói pip ``deno``."""
+    runtimes = {"deno": {}, "node": {}}
+    if not shutil.which("deno"):
+        try:
+            import deno
+
+            runtimes["deno"] = {"path": deno.find_deno_bin()}
+        except (ImportError, OSError, RuntimeError):
+            pass
+    return runtimes
+
+
 def format_selector(max_height: int) -> str:
     """Chọn stream nhỏ nhất đủ dùng: ưu tiên H.264 + AAC để file phát được ở mọi nơi."""
     h = f"[height<={max_height}]"
@@ -117,6 +145,7 @@ def download_clip(
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    ffmpeg = _ffmpeg_location()
     opts = {
         "format": format_selector(max_height),
         "merge_output_format": "mp4",
@@ -126,19 +155,23 @@ def download_clip(
         "noplaylist": True,
         "playlist_items": "1",
         "overwrites": True,
-        # YouTube cần một JavaScript runtime để giải mã link stream; dùng cái nào có sẵn.
-        "js_runtimes": {"deno": {}, "node": {}},
+        "js_runtimes": _js_runtimes(),
+        "ffmpeg_location": ffmpeg,
         "quiet": quiet,
         "no_warnings": quiet,
         "noprogress": quiet,
     }
 
+    # Bộ tải của yt-dlp chỉ đọc vị trí ffmpeg từ biến này (CLI của yt-dlp cũng đặt nó như vậy).
+    ffmpeg_token = FFmpegPostProcessor._ffmpeg_location.set(ffmpeg)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
     except yt_dlp.utils.DownloadError as e:
         message = _ANSI_RE.sub("", str(e)).removeprefix("ERROR: ").split("; please report this issue")[0]
         raise ClipError(f"Không tải được video: {message}") from e
+    finally:
+        FFmpegPostProcessor._ffmpeg_location.reset(ffmpeg_token)
 
     if info and info.get("entries") is not None:  # link playlist: lấy video đầu tiên
         info = next((entry for entry in info["entries"] if entry), None)
