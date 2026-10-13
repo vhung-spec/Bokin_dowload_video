@@ -184,6 +184,17 @@ def _window_size(webview) -> tuple[int, int]:
 def run_in_window(args: set[str]) -> int:
     import webview
 
+    stage = ["tạo cửa sổ"]
+    if "--smoke-test-window" in args:
+        logging.basicConfig(level=logging.INFO)  # để log của pywebview hiện ra khi build
+
+        def watchdog():  # đừng treo mãi khi build: báo đang kẹt ở bước nào rồi thoát
+            time.sleep(120)
+            print(f"smoke test window TIMEOUT, đang ở bước: {stage[0]}", flush=True)
+            os._exit(2)
+
+        threading.Thread(target=watchdog, daemon=True).start()
+
     api = Api()
     width, height = _window_size(webview)
     window = webview.create_window("Bokin Clip", html=SPLASH, js_api=api, width=width, height=height,
@@ -198,6 +209,7 @@ def run_in_window(args: set[str]) -> int:
             pass
 
     def boot():
+        stage[0] = "cửa sổ đã mở, chạy boot()"
         try:
             if "--no-update" not in args:
                 status("Đang kiểm tra bản cập nhật của yt-dlp…")
@@ -205,8 +217,10 @@ def run_in_window(args: set[str]) -> int:
             status("Đang mở…")
             web, url = start_server()
             log(f"app {web.APP_VERSION} chạy tại {url}")
+            stage[0] = f"nạp giao diện {url}"
             window.load_url(url + "?desktop=1")
             if "--smoke-test-window" in args:
+                stage[0] = "chờ giao diện hiện ra"
                 for _ in range(60):  # chờ giao diện thật (có ô "Lưu vào") thay cho màn hình chờ
                     time.sleep(1)
                     if window.evaluate_js("!!document.getElementById('folder')"):
@@ -224,6 +238,7 @@ def run_in_window(args: set[str]) -> int:
             if "--smoke-test-window" in args:
                 window.destroy()
 
+    stage[0] = "khởi động WebView2 (webview.start)"
     webview.start(boot, gui="edgechromium" if sys.platform == "win32" else None, icon=str(ICON),
                   private_mode=False, storage_path=str(APP_DIR / "webview-data"))
     return 1 if failed else 0

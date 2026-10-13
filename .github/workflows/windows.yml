@@ -46,14 +46,20 @@ jobs:
         run: build\app\python\python.exe build\app\desktop.py --smoke-test --no-update
 
       - name: Kiểm tra cửa sổ app (WebView2)
+        id: window
         continue-on-error: true
-        timeout-minutes: 3
-        run: build\app\python\python.exe build\app\desktop.py --smoke-test-window --no-update
+        timeout-minutes: 4
+        run: |
+          build\app\python\python.exe build\app\desktop.py --smoke-test-window --no-update 2>&1 | Tee-Object build\window-test.log
+          exit $LASTEXITCODE
 
       - name: Thử tải 5 giây từ YouTube thật (chỉ để tham khảo, YouTube hay chặn máy chủ CI)
+        id: youtube
         continue-on-error: true
         timeout-minutes: 5
-        run: build\app\python\python.exe build\app\clipper.py "https://www.youtube.com/watch?v=BaW_jenozKc" -d 5 -o build\yt-test
+        run: |
+          build\app\python\python.exe build\app\clipper.py "https://www.youtube.com/watch?v=BaW_jenozKc" -d 5 -o build\yt-test 2>&1 | Tee-Object build\youtube-test.log
+          exit $LASTEXITCODE
 
       - name: Đóng gói bộ cài (Inno Setup)
         shell: pwsh
@@ -65,7 +71,7 @@ jobs:
           } catch { Write-Warning "Không tải được bản dịch tiếng Việt, bộ cài dùng tiếng Anh: $_" }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
-          & $iscc "/DAppVersion=$version" packaging\windows\installer.iss
+          & $iscc /Qp "/DAppVersion=$version" packaging\windows\installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Thử cài đặt, chạy rồi gỡ bộ cài
@@ -90,6 +96,16 @@ jobs:
           name: BokinClip-Setup-${{ env.VERSION }}
           path: dist/BokinClip-Setup-*.exe
           if-no-files-found: error
+
+      - name: Tóm tắt các bước chỉ để tham khảo
+        if: always()
+        shell: pwsh
+        run: |
+          "== Cửa sổ app: ${{ steps.window.outcome }}"
+          Get-Content build\window-test.log -ErrorAction SilentlyContinue | Select-Object -Last 40
+          "== Tải YouTube thật: ${{ steps.youtube.outcome }}"
+          Get-Content build\youtube-test.log -ErrorAction SilentlyContinue | Select-Object -Last 40
+          Get-ChildItem build\yt-test -ErrorAction SilentlyContinue | Format-Table Name, Length
 
       - name: Tạo GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
