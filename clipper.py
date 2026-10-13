@@ -13,6 +13,8 @@ Dùng từ dòng lệnh:
 
     python clipper.py "https://www.youtube.com/watch?v=..."            # 15s đầu
     python clipper.py URL --start 1:30 --duration 20 --quality 480
+    python clipper.py URL1 URL2 URL3                                   # nhiều video
+    python clipper.py --file danh-sach.txt                             # link trong file .txt
 """
 
 from __future__ import annotations
@@ -103,6 +105,11 @@ def validate_youtube_url(url: str) -> str:
     if parsed.scheme not in ("http", "https") or (parsed.hostname or "").lower() not in YOUTUBE_HOSTS:
         raise ClipError("Link không hợp lệ: hãy dán link video YouTube (youtube.com hoặc youtu.be).")
     return url
+
+
+def extract_links(text: str) -> list[str]:
+    """Lọc các link http(s) trong một đoạn văn (mỗi dòng một link hoặc lẫn chữ), bỏ link trùng."""
+    return list(dict.fromkeys(re.findall(r"https?://[^\s\"'<>,]+", text)))
 
 
 def parse_seconds(value: str | float | int | None, default: float = 0) -> float:
@@ -449,7 +456,8 @@ def _download_with_ffmpeg(url: str, out_dir: Path, section: _Section, extractor_
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Tải nhanh một đoạn ngắn (mặc định 15 giây đầu) của video YouTube.")
-    parser.add_argument("url", help="link video YouTube")
+    parser.add_argument("urls", nargs="*", metavar="url", help="một hoặc nhiều link video YouTube")
+    parser.add_argument("-f", "--file", help="file .txt chứa danh sách link (mỗi dòng một link)")
     parser.add_argument("-s", "--start", default="0", help="bắt đầu từ (giây hoặc mm:ss), mặc định 0")
     parser.add_argument("-d", "--duration", default=str(DEFAULT_DURATION),
                         help=f"độ dài đoạn cắt (giây), mặc định {DEFAULT_DURATION}")
@@ -459,22 +467,40 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--precise", action="store_true", help="cắt chính xác từng khung hình (encode lại, chậm hơn)")
     args = parser.parse_args(argv)
 
+    urls = list(args.urls)
+    if args.file:
+        try:
+            urls += extract_links(Path(args.file).read_text(encoding="utf-8-sig"))
+        except OSError as e:
+            print(f"Lỗi: không đọc được file {args.file}: {e}", file=sys.stderr)
+            return 1
+    urls = list(dict.fromkeys(urls))
+    if not urls:
+        parser.error("cần ít nhất một link, hoặc --file chứa danh sách link")
     try:
-        url = validate_youtube_url(args.url)
-        clip = download_clip(
-            url,
-            args.output,
-            start=parse_seconds(args.start),
-            duration=parse_seconds(args.duration, DEFAULT_DURATION),
-            max_height=args.quality,
-            precise=args.precise,
-            quiet=False,
-        )
+        options = {
+            "start": parse_seconds(args.start),
+            "duration": parse_seconds(args.duration, DEFAULT_DURATION),
+            "max_height": args.quality,
+            "precise": args.precise,
+        }
     except ClipError as e:
         print(f"Lỗi: {e}", file=sys.stderr)
         return 1
-    print(f"Đã lưu: {clip.path}")
-    return 0
+
+    failures = 0
+    for i, url in enumerate(urls, 1):
+        prefix = f"[{i}/{len(urls)}] " if len(urls) > 1 else ""
+        try:
+            clip = download_clip(validate_youtube_url(url), args.output, quiet=False, **options)
+        except ClipError as e:
+            failures += 1
+            print(f"{prefix}Lỗi ({url}): {e}", file=sys.stderr)
+        else:
+            print(f"{prefix}Đã lưu: {clip.path}")
+    if len(urls) > 1:
+        print(f"Xong {len(urls) - failures}/{len(urls)} video.")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

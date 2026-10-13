@@ -9,7 +9,8 @@ import threading
 import pytest
 
 import clipper
-from clipper import ClipError, download_clip, format_selector, parse_seconds, validate_youtube_url
+from clipper import (ClipError, Clip, download_clip, extract_links, format_selector, main, parse_seconds,
+                     validate_youtube_url)
 
 needs_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
                                   reason="cần ffmpeg và ffprobe")
@@ -50,6 +51,40 @@ def test_parse_seconds(value, expected):
 def test_parse_seconds_rejects_garbage(value):
     with pytest.raises(ClipError):
         parse_seconds(value)
+
+
+def test_extract_links_from_pasted_text():
+    text = """Danh sách:
+    1. https://www.youtube.com/watch?v=aaa
+    2. https://youtu.be/bbb?t=5, https://youtu.be/ccc
+    https://www.youtube.com/watch?v=aaa   (trùng)
+    không phải link: youtube.com/watch?v=ddd
+    """
+    assert extract_links(text) == [
+        "https://www.youtube.com/watch?v=aaa", "https://youtu.be/bbb?t=5", "https://youtu.be/ccc",
+    ]
+
+
+def test_cli_downloads_every_link_and_reports_failures(tmp_path, monkeypatch, capsys):
+    listing = tmp_path / "links.txt"
+    listing.write_text("https://youtu.be/b\nhttps://youtu.be/a\nhttps://example.com/x\n", encoding="utf-8")
+    calls = []
+
+    def fake_download(url, out_dir, **kwargs):
+        calls.append((url, kwargs["start"], kwargs["duration"]))
+        if url.endswith("/b"):
+            raise ClipError("HTTP Error 403")
+        return Clip(path=tmp_path / f"{url[-1]}.mp4", title=url, video_id=url[-1], start=0, end=15)
+
+    monkeypatch.setattr(clipper, "download_clip", fake_download)
+    code = main(["https://youtu.be/a", "--file", str(listing), "-o", str(tmp_path), "-s", "1:00"])
+
+    out, err = capsys.readouterr()
+    assert code == 1
+    assert calls == [("https://youtu.be/a", 60, 15), ("https://youtu.be/b", 60, 15)]  # bỏ link trùng
+    assert "[1/3] Đã lưu" in out and "Xong 1/3 video." in out
+    assert "[2/3] Lỗi (https://youtu.be/b): HTTP Error 403" in err
+    assert "[3/3] Lỗi (https://example.com/x)" in err
 
 
 def test_format_selector_limits_height():

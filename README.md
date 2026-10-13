@@ -55,6 +55,19 @@ Các tuỳ chọn:
 - **Cắt chính xác từng khung hình**: encode lại để điểm cắt chính xác tuyệt đối (chậm hơn).
   Khi bắt đầu từ giây 0 thì không cần bật tuỳ chọn này.
 
+### Tải nhiều video một lúc
+
+Chọn tab **Nhiều video**, dán danh sách link (mỗi dòng một link; dán cả đoạn văn có lẫn chữ
+cũng được, app tự lọc ra link và bỏ link trùng), rồi bấm **Tải 15 giây đầu của N video**.
+
+- App tải 3 video cùng lúc và hiện trạng thái từng link: đang chờ, đang tải, xong hoặc lỗi.
+- File được **lưu thẳng vào thư mục `Downloads/Bokin Clip`** trên máy, không cần bấm lưu từng
+  file. Bấm **Mở thư mục** để xem.
+- **Dừng**: các video đang tải dở sẽ tải xong, các link còn lại thì dừng.
+- **Tải lại link lỗi**: chỉ tải lại các link bị lỗi hoặc đã dừng.
+- Đổi thư mục lưu bằng biến môi trường `BOKIN_OUTPUT_DIR`, ví dụ
+  `BOKIN_OUTPUT_DIR="D:\Clip" python app.py` (Windows: `set BOKIN_OUTPUT_DIR=D:\Clip` trước).
+
 Đổi cổng hoặc địa chỉ: `PORT=8080 HOST=0.0.0.0 python app.py`.
 
 ## Dùng dòng lệnh
@@ -63,6 +76,8 @@ Các tuỳ chọn:
 python clipper.py "https://www.youtube.com/watch?v=VIDEO_ID"                # 15 giây đầu, lưu vào ./downloads
 python clipper.py "https://youtu.be/VIDEO_ID" -s 1:30 -d 20 -q 480         # 20 giây từ phút 1:30, 480p
 python clipper.py "https://youtu.be/VIDEO_ID" -o ~/Videos --precise
+python clipper.py "https://youtu.be/ID_1" "https://youtu.be/ID_2"          # nhiều video
+python clipper.py --file danh-sach.txt                                     # link trong file .txt
 ```
 
 ## Chạy test

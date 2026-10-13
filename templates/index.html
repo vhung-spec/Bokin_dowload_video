@@ -8,11 +8,13 @@
     :root {
       --bg: #f6f7f9; --card: #ffffff; --text: #1d2129; --muted: #5f6673;
       --border: #d9dde3; --accent: #e5322d; --accent-text: #ffffff; --error: #b42318;
+      --ok: #157f3c; --tab: #eceef2;
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #14161a; --card: #1e2127; --text: #e8eaed; --muted: #9aa0a6;
         --border: #343842; --accent: #ff4e45; --accent-text: #ffffff; --error: #ff8a80;
+        --ok: #6dd58c; --tab: #262a31;
       }
     }
     * { box-sizing: border-box; }
@@ -23,29 +25,58 @@
     }
     main { width: 100%; max-width: 560px; }
     h1 { font-size: 1.5rem; margin: 0 0 4px; }
-    p.sub { color: var(--muted); margin: 0 0 24px; }
+    p.sub { color: var(--muted); margin: 0 0 20px; }
     form, .result {
       background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
     }
     label { display: block; font-size: .875rem; color: var(--muted); margin-bottom: 4px; }
-    input, select {
+    input, select, textarea {
       width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
       border: 1px solid var(--border); border-radius: 8px;
     }
-    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    textarea { min-height: 140px; resize: vertical; font-size: .9rem; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
     .check { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: .875rem; }
     .check input { width: auto; }
-    button {
-      width: 100%; margin-top: 20px; padding: 12px; font: inherit; font-weight: 600; cursor: pointer;
-      color: var(--accent-text); background: var(--accent); border: 0; border-radius: 8px;
-    }
+    .hint { margin-top: 6px; font-size: .8rem; color: var(--muted); }
+    button { font: inherit; cursor: pointer; border-radius: 8px; }
     button:disabled { opacity: .6; cursor: progress; }
+    .primary {
+      width: 100%; margin-top: 20px; padding: 12px; font-weight: 600;
+      color: var(--accent-text); background: var(--accent); border: 0;
+    }
+    .secondary {
+      padding: 6px 12px; font-size: .875rem; font-weight: 600;
+      color: var(--text); background: transparent; border: 1px solid var(--border);
+    }
+    .tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 12px; background: var(--tab); border-radius: 10px; }
+    .tabs button {
+      flex: 1; padding: 8px; font-weight: 600; font-size: .9rem; color: var(--muted);
+      background: transparent; border: 0;
+    }
+    .tabs button[aria-selected="true"] { color: var(--text); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
     .status { margin-top: 12px; min-height: 1.5em; font-size: .9rem; color: var(--muted); }
     .status.error { color: var(--error); }
     .result { margin-top: 16px; }
     .result video { width: 100%; border-radius: 8px; background: #000; }
     .result a { display: inline-block; margin-top: 8px; color: var(--accent); font-weight: 600; word-break: break-all; }
+    .batch-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .batch-head .actions { display: flex; gap: 8px; }
+    .folder { margin: 6px 0 12px; font-size: .8rem; color: var(--muted); word-break: break-all; }
+    .items { list-style: none; margin: 0; padding: 0; }
+    .item { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+    .badge {
+      flex: none; min-width: 76px; height: fit-content; padding: 2px 8px; text-align: center;
+      font-size: .75rem; font-weight: 600; border-radius: 999px; color: var(--muted); background: var(--tab);
+    }
+    .item[data-state="working"] .badge { color: var(--accent-text); background: var(--accent); }
+    .item[data-state="done"] .badge { color: var(--ok); }
+    .item[data-state="error"] .badge { color: var(--error); }
+    .item-body { min-width: 0; flex: 1; }
+    .item-title { font-size: .9rem; overflow-wrap: anywhere; }
+    .item-detail { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
+    .item[data-state="error"] .item-detail { color: var(--error); }
     @media (max-width: 420px) { .row { grid-template-columns: 1fr 1fr; } .row > :last-child { grid-column: span 2; } }
   </style>
 </head>
@@ -54,10 +85,24 @@
   <h1>Tải nhanh đoạn đầu video YouTube</h1>
   <p class="sub">Chỉ tải đúng đoạn cần, không tải cả video, nên xong sau vài giây.</p>
 
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tab-one" aria-selected="true">Một video</button>
+    <button type="button" role="tab" id="tab-many" aria-selected="false">Nhiều video</button>
+  </div>
+
   <form id="form">
-    <label for="url">Link YouTube</label>
-    <input id="url" name="url" type="url" required autofocus
-           placeholder="https://www.youtube.com/watch?v=...">
+    <div id="one-input">
+      <label for="url">Link YouTube</label>
+      <input id="url" name="url" type="url" required autofocus
+             placeholder="https://www.youtube.com/watch?v=...">
+    </div>
+
+    <div id="many-input" hidden>
+      <label for="urls">Danh sách link YouTube (mỗi dòng một link)</label>
+      <textarea id="urls" name="urls" spellcheck="false"
+                placeholder="https://www.youtube.com/watch?v=...&#10;https://youtu.be/...&#10;..."></textarea>
+      <div id="urls-count" class="hint">Dán cả đoạn văn cũng được, app sẽ tự lọc ra các link.</div>
+    </div>
 
     <div class="row">
       <div>
@@ -81,7 +126,7 @@
 
     <label class="check"><input id="precise" name="precise" type="checkbox"> Cắt chính xác từng khung hình (chậm hơn)</label>
 
-    <button id="submit" type="submit">Tải {{ default_duration }} giây đầu</button>
+    <button id="submit" class="primary" type="submit">Tải {{ default_duration }} giây đầu</button>
     <div id="status" class="status" role="status"></div>
   </form>
 
@@ -89,22 +134,87 @@
     <video id="preview" controls playsinline></video>
     <a id="download" href="#">Lưu file</a>
   </div>
+
+  <section id="batch" class="result" hidden>
+    <div class="batch-head">
+      <strong id="batch-summary" role="status"></strong>
+      <div class="actions">
+        <button id="stop" class="secondary" type="button" hidden>Dừng</button>
+        <button id="retry" class="secondary" type="button" hidden>Tải lại link lỗi</button>
+        <button id="open-folder" class="secondary" type="button">Mở thư mục</button>
+      </div>
+    </div>
+    <div class="folder">Lưu vào: <span id="folder">{{ output_dir }}</span></div>
+    <ol id="items" class="items"></ol>
+  </section>
 </main>
 
 <script>
   const $ = (id) => document.getElementById(id);
   const form = $("form"), button = $("submit"), statusBox = $("status");
-  let objectUrl = null;
+  const CONCURRENCY = 3;  // số video tải cùng lúc ở tab "Nhiều video"
+  const LABELS = { waiting: "Đang chờ", working: "Đang tải…", done: "Xong", error: "Lỗi", stopped: "Đã dừng" };
+  let mode = "one", objectUrl = null, items = [], running = false, stopRequested = false;
+
+  function extractLinks(text) {
+    return [...new Set(text.match(/https?:\/\/[^\s"'<>,]+/g) || [])];
+  }
 
   function updateButton() {
     const start = $("start").value.trim();
     const duration = $("duration").value || "{{ default_duration }}";
-    button.textContent = (start === "" || start === "0")
-      ? `Tải ${duration} giây đầu`
-      : `Tải ${duration} giây từ ${start}`;
+    const what = (start === "" || start === "0") ? `${duration} giây đầu` : `${duration} giây từ ${start}`;
+    if (mode === "one") {
+      button.textContent = `Tải ${what}`;
+    } else {
+      const count = extractLinks($("urls").value).length;
+      button.textContent = count ? `Tải ${what} của ${count} video` : `Tải ${what} của từng video`;
+      $("urls-count").textContent = count
+        ? `Nhận được ${count} link.`
+        : "Dán cả đoạn văn cũng được, app sẽ tự lọc ra các link.";
+    }
   }
-  $("start").addEventListener("input", updateButton);
-  $("duration").addEventListener("input", updateButton);
+  ["start", "duration", "urls"].forEach((id) => $(id).addEventListener("input", updateButton));
+
+  function setMode(next) {
+    mode = next;
+    $("tab-one").setAttribute("aria-selected", mode === "one");
+    $("tab-many").setAttribute("aria-selected", mode === "many");
+    $("one-input").hidden = mode !== "one";
+    $("many-input").hidden = mode !== "many";
+    $("url").required = mode === "one";
+    $("urls").required = mode === "many";
+    $("result").hidden = mode !== "one" || !objectUrl;
+    $("batch").hidden = mode !== "many" || !items.length;
+    statusBox.textContent = "";
+    updateButton();
+    try { localStorage.setItem("bokin-mode", mode); } catch {}
+  }
+  $("tab-one").addEventListener("click", () => setMode("one"));
+  $("tab-many").addEventListener("click", () => setMode("many"));
+
+  function options() {
+    return {
+      start: $("start").value,
+      duration: $("duration").value,
+      quality: $("quality").value,
+      precise: $("precise").checked,
+    };
+  }
+
+  async function postJson(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return response;
+  }
+
+  async function errorFrom(response) {
+    const data = await response.json().catch(() => ({}));
+    return new Error(data.error || `Lỗi máy chủ (${response.status})`);
+  }
 
   function filenameFrom(response) {
     const header = response.headers.get("Content-Disposition") || "";
@@ -114,44 +224,133 @@
     return plain ? plain[1] : "clip.mp4";
   }
 
+  async function downloadOne() {
+    statusBox.textContent = "Đang tải đoạn video…";
+    const began = performance.now();
+    const response = await postJson("/api/clip", { url: $("url").value, ...options() });
+    if (!response.ok) throw await errorFrom(response);
+    const blob = await response.blob();
+    const name = filenameFrom(response);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(blob);
+
+    $("preview").src = objectUrl;
+    const link = $("download");
+    link.href = objectUrl;
+    link.download = name;
+    link.textContent = `Lưu file: ${name}`;
+    $("result").hidden = false;
+    link.click();
+
+    const seconds = ((performance.now() - began) / 1000).toFixed(1);
+    statusBox.textContent = `Xong sau ${seconds} giây (${(blob.size / 1048576).toFixed(1)} MB).`;
+  }
+
+  // ---- Tab "Nhiều video": mỗi link một request /api/save, chạy song song CONCURRENCY link ----
+
+  function setItem(item, state, detail = "") {
+    item.state = state;
+    item.el.dataset.state = state;
+    item.el.querySelector(".badge").textContent = LABELS[state];
+    item.el.querySelector(".item-detail").textContent = detail;
+  }
+
+  function renderItems(urls) {
+    const list = $("items");
+    list.replaceChildren();
+    items = urls.map((url) => {
+      const el = document.createElement("li");
+      el.className = "item";
+      el.innerHTML = '<span class="badge"></span><div class="item-body"><div class="item-title"></div><div class="item-detail"></div></div>';
+      el.querySelector(".item-title").textContent = url;
+      list.append(el);
+      const item = { url, el };
+      setItem(item, "waiting");
+      return item;
+    });
+  }
+
+  function updateSummary(began) {
+    const count = (state) => items.filter((item) => item.state === state).length;
+    const done = count("done"), failed = count("error"), stopped = count("stopped");
+    let text;
+    if (running) {
+      text = `Đang tải… ${done + failed}/${items.length}`;
+    } else {
+      const seconds = ((performance.now() - began) / 1000).toFixed(1);
+      text = `Xong ${done}/${items.length} video sau ${seconds} giây`;
+      if (failed) text += ` · ${failed} lỗi`;
+      if (stopped) text += ` · ${stopped} đã dừng`;
+    }
+    $("batch-summary").textContent = text;
+    $("retry").hidden = running || !(failed + stopped);
+    $("stop").hidden = !running;
+  }
+
+  async function runBatch(queue) {
+    const opts = options();  // giữ nguyên tuỳ chọn trong suốt lượt tải
+    const began = performance.now();
+    running = true;
+    stopRequested = false;
+    queue.forEach((item) => setItem(item, "waiting"));
+    updateSummary(began);
+
+    async function worker() {
+      while (queue.length && !stopRequested) {
+        const item = queue.shift();
+        setItem(item, "working");
+        try {
+          const response = await postJson("/api/save", { url: item.url, ...opts });
+          if (!response.ok) throw await errorFrom(response);
+          const data = await response.json();
+          item.el.querySelector(".item-title").textContent = data.title || item.url;
+          setItem(item, "done", `${data.file} · ${(data.size / 1048576).toFixed(1)} MB`);
+        } catch (error) {
+          setItem(item, "error", error.message);
+        }
+        updateSummary(began);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+    queue.forEach((item) => setItem(item, "stopped"));  // còn lại do bấm Dừng
+    running = false;
+    updateSummary(began);
+  }
+
+  async function downloadMany() {
+    const urls = extractLinks($("urls").value);
+    if (!urls.length) throw new Error("Không tìm thấy link nào. Mỗi link cần bắt đầu bằng http:// hoặc https://");
+    renderItems(urls);
+    $("batch").hidden = false;
+    await runBatch([...items]);
+  }
+
+  $("stop").addEventListener("click", () => {
+    stopRequested = true;
+    $("stop").disabled = true;
+  });
+
+  $("retry").addEventListener("click", async () => {
+    $("retry").hidden = true;
+    button.disabled = true;
+    $("stop").disabled = false;
+    await runBatch(items.filter((item) => item.state === "error" || item.state === "stopped"));
+    button.disabled = false;
+  });
+
+  $("open-folder").addEventListener("click", async () => {
+    const response = await postJson("/api/open-folder", {});
+    if (!response.ok) alert((await errorFrom(response)).message);
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     button.disabled = true;
+    $("stop").disabled = false;
     statusBox.className = "status";
-    statusBox.textContent = "Đang tải đoạn video…";
-    const began = performance.now();
-
+    statusBox.textContent = "";
     try {
-      const response = await fetch("/api/clip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: $("url").value,
-          start: $("start").value,
-          duration: $("duration").value,
-          quality: $("quality").value,
-          precise: $("precise").checked,
-        }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `Lỗi máy chủ (${response.status})`);
-      }
-      const blob = await response.blob();
-      const name = filenameFrom(response);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-      objectUrl = URL.createObjectURL(blob);
-
-      $("preview").src = objectUrl;
-      const link = $("download");
-      link.href = objectUrl;
-      link.download = name;
-      link.textContent = `Lưu file: ${name}`;
-      $("result").hidden = false;
-      link.click();
-
-      const seconds = ((performance.now() - began) / 1000).toFixed(1);
-      statusBox.textContent = `Xong sau ${seconds} giây (${(blob.size / 1048576).toFixed(1)} MB).`;
+      await (mode === "one" ? downloadOne() : downloadMany());
     } catch (error) {
       statusBox.className = "status error";
       statusBox.textContent = error.message;
@@ -159,6 +358,10 @@
       button.disabled = false;
     }
   });
+
+  let savedMode = "one";
+  try { savedMode = localStorage.getItem("bokin-mode") || "one"; } catch {}
+  setMode(savedMode === "many" ? "many" : "one");
 </script>
 </body>
 </html>
