@@ -50,7 +50,7 @@ Invoke-Native "$py\python.exe" (@("-m", "pip", "install", "--no-warn-script-loca
     "--no-index", "--find-links", $wheels) + $requirements)
 
 Write-Host "== Code app"
-foreach ($file in "app.py", "clipper.py", "desktop.py", "requirements.txt") {
+foreach ($file in "app.py", "clipper.py", "splitter.py", "desktop.py", "requirements.txt") {
     Copy-Item (Join-Path $root $file) $app
 }
 Copy-Item (Join-Path $root "templates"), (Join-Path $root "static") $app -Recurse

@@ -192,6 +192,29 @@ def _clean_message(error: Exception) -> str:
                   lambda m: f"ffmpeg: {_ffmpeg_error(int(m.group(1)))}", message)
 
 
+def _chapters_within(chapters: list[dict] | None, start: float, end: float) -> list[tuple[float, float, str]]:
+    """Chương của video nằm trong đoạn [start, end], tính lại thời gian tính từ đầu đoạn."""
+    result = []
+    for chapter in chapters or []:
+        chapter_start = max(float(chapter.get("start_time") or 0), start)
+        chapter_end = min(float(chapter.get("end_time") or end), end)
+        if chapter_end - chapter_start >= 1:
+            result.append((chapter_start - start, chapter_end - start, chapter.get("title") or ""))
+    return result
+
+
+def _ffmetadata(chapters: list[tuple[float, float, str]]) -> str:
+    """File metadata của ffmpeg chứa các chương (để ghi chương vào MP3)."""
+    def escape(text: str) -> str:
+        return re.sub(r"([=;#\\\n])", r"\\\1", text)
+
+    lines = [";FFMETADATA1"]
+    for chapter_start, chapter_end, title in chapters:
+        lines += ["[CHAPTER]", "TIMEBASE=1/1000", f"START={round(chapter_start * 1000)}",
+                  f"END={round(chapter_end * 1000)}", f"title={escape(title)}"]
+    return "\n".join(lines) + "\n"
+
+
 def download_clip(
     url: str,
     out_dir: str | Path,
@@ -317,9 +340,11 @@ def _download_by_index(url: str, out_dir: Path, section: _Section, extractor_arg
             outtmpl=str(out_dir / section.outtmpl(end))))
         parts = [out_path.with_name(f"{out_path.stem}.part{i}.{f['ext']}") for i, f in enumerate(formats)]
         metadata = {"title": info.get("title"), "artist": info.get("artist") or info.get("uploader")}
+        # Ghi chương của video vào MP3: tab "Tách bài" dùng chúng để cắt đúng từng bài, có sẵn tên.
+        chapters = _chapters_within(info.get("chapters"), section.start, end) if section.audio else []
         try:
             starts = [_fetch_section(ydl, f, section.start, end, part) for f, part in zip(formats, parts)]
-            _cut(list(zip(parts, starts)), out_path, section, metadata)
+            _cut(list(zip(parts, starts)), out_path, section, metadata, chapters)
         except RequestError as e:
             raise ClipError(f"Không tải được video: {_clean_message(e)}") from e
         finally:
@@ -421,20 +446,25 @@ def _parse_sidx(data: bytes, pos: int, header: int, size: int) -> list[_Segment]
     return segments
 
 
-def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section, metadata: dict | None = None) -> None:
+def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section, metadata: dict | None = None,
+         chapters: list[tuple[float, float, str]] | None = None) -> None:
     """Ghép các stream đã tải rồi cắt đúng [start, start + duration] bằng ffmpeg trên máy
-    (với nhạc: mã hoá thành MP3 và ghi tên bài, kênh vào file)."""
+    (với nhạc: mã hoá thành MP3, ghi tên bài, kênh và các chương vào file)."""
     cmd = [_ffmpeg_location() or "ffmpeg", "-y", "-v", "error"]
     for part, part_start in parts:
         if section.start > part_start:
             cmd += ["-ss", f"{section.start - part_start:.3f}"]
         cmd += ["-i", str(part)]
+    chapters_file = out_path.with_name(f"{out_path.stem}.chapters.txt")
+    if chapters:
+        chapters_file.write_text(_ffmetadata(chapters), encoding="utf-8")
+        cmd += ["-f", "ffmetadata", "-i", str(chapters_file), "-map_chapters", str(len(parts))]
     for i in range(len(parts)):
         cmd += ["-map", str(i)]
     if section.duration is not None:
         cmd += ["-t", f"{section.duration:.3f}"]
     if section.audio:
-        cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", AUDIO_BITRATE]
+        cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", AUDIO_BITRATE, "-id3v2_version", "3"]
         for key, value in (metadata or {}).items():
             if value:
                 cmd += ["-metadata", f"{key}={value}"]
@@ -445,7 +475,11 @@ def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section, met
         cmd += ["-c", "copy", "-movflags", "+faststart"]
     cmd += [str(out_path)]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **_NO_WINDOW)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                **_NO_WINDOW)
+    finally:
+        chapters_file.unlink(missing_ok=True)
     if result.returncode != 0 or not out_path.is_file() or out_path.stat().st_size == 0:
         detail = (result.stderr.strip().splitlines() or [_ffmpeg_error(result.returncode)])[-1]
         raise ClipError(f"ffmpeg không xử lý được file: {detail}")
@@ -465,7 +499,7 @@ def _download_with_ffmpeg(url: str, out_dir: Path, section: _Section, extractor_
             "format": "ba[ext=m4a]/ba/b",
             "postprocessors": [
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": AUDIO_BITRATE.rstrip("k")},
-                {"key": "FFmpegMetadata", "add_metadata": True},
+                {"key": "FFmpegMetadata", "add_metadata": True, "add_chapters": True},
             ],
         }
         if section.start or section.duration is not None:

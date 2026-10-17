@@ -105,6 +105,29 @@ cũng được, app tự lọc ra link và bỏ link trùng), rồi bấm **Tả
 
 Đổi cổng hoặc địa chỉ: `PORT=8080 HOST=0.0.0.0 python app.py`.
 
+### Tách bài trong một file nhạc dài
+
+Tab **Tách bài** cắt một file nhạc dài (vd. video tổng hợp nhiều bài đã tải về dạng MP3) thành
+từng bài:
+
+1. Bấm **Chọn file…** (hoặc dán đường dẫn file), rồi bấm **Nhận diện các bài hát**.
+2. App nhận diện điểm chuyển bài:
+   - **theo chương có trong file**: nhạc tải bằng app từ video YouTube có chia chương sẽ có sẵn
+     chương và tên từng bài, nên tách rất chính xác;
+   - không có chương thì **theo khoảng lặng giữa các bài**, bỏ qua những đoạn nhỏ tiếng ngắn ngay
+     trong một bài. Chỉnh **Mỗi bài dài ít nhất** và **Độ nhạy** nếu tách thiếu hoặc thừa.
+3. Xem lại danh sách: bấm ▶ để nghe từ đầu mỗi bài, sửa giờ bắt đầu (phút:giây) và tên bài,
+   bỏ tick bài không muốn lấy, bấm × để nối một bài vào bài trước. Muốn thêm điểm cắt: phát nhạc
+   đến chỗ chuyển bài rồi bấm **Thêm điểm cắt**.
+4. Bấm **Cắt và lưu**: mỗi bài thành một file MP3 (`01 - Tên bài.mp3`, ...) trong thư mục
+   `<tên file> (tách bài)` bên trong thư mục lưu. File MP3 được cắt nguyên vẹn, không mã hoá lại;
+   mỗi bài có sẵn tên bài, số thứ tự, album và nghệ sĩ.
+
+Sau khi tải nhạc ở tab **Một video**, nút **Tách bài trong file này** mở ngay file vừa tải.
+
+Nhạc mix nối liền không có khoảng lặng giữa các bài (kiểu DJ mix) thì app không tự tìm được điểm
+chuyển bài; khi đó hãy thêm điểm cắt bằng tay như ở bước 3.
+
 ## Dùng dòng lệnh
 
 ```bash

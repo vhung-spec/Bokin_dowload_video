@@ -13,6 +13,7 @@ import json
 import logging
 import mimetypes
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,8 @@ from urllib.parse import quote
 import yt_dlp.version
 from flask import Flask, jsonify, render_template, request, send_file
 
+import splitter
+
 from clipper import (
     DEFAULT_DURATION,
     DEFAULT_QUALITY,
@@ -37,7 +40,7 @@ from clipper import (
     validate_youtube_url,
 )
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 SETTINGS_FILE = Path(__file__).with_name("settings.json")
 NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
@@ -272,12 +275,155 @@ def _reveal(folder: Path) -> None:
 def open_folder():
     if not _from_this_computer():
         return _not_local()
+    folder = OUTPUT_DIR
+    wanted = (request.get_json(silent=True) or {}).get("path")
+    if wanted:  # vd. thư mục chứa các bài vừa tách; chỉ cho mở thư mục nằm trong thư mục lưu
+        folder = Path(wanted)
+        try:
+            folder.resolve().relative_to(OUTPUT_DIR.resolve())
+        except (OSError, ValueError):
+            return jsonify(error="Chỉ mở được thư mục nằm trong thư mục lưu."), 400
     try:
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        _reveal(OUTPUT_DIR)
+        folder.mkdir(parents=True, exist_ok=True)
+        _reveal(folder)
     except OSError as e:
-        return jsonify(error=f"Không mở được thư mục {OUTPUT_DIR}: {e}"), 500
-    return jsonify(folder=str(OUTPUT_DIR))
+        return jsonify(error=f"Không mở được thư mục {folder}: {e}"), 500
+    return jsonify(folder=str(folder))
+
+
+# --- Tab "Tách bài": phân tích một file nhạc dài, xem lại rồi cắt thành từng bài ---------------
+
+_SPLITS: dict[str, dict] = {}  # mã phân tích -> {"path", "name", "analysis", "uploaded"}
+_UPLOAD_DIR = Path(tempfile.gettempdir()) / f"bokin-split-{os.getpid()}"
+
+
+def _prune_old_uploads(max_age: float = 6 * 3600) -> None:
+    """Xoá file tải lên còn sót của các lần chạy trước (app tắt đột ngột thì không kịp dọn)."""
+    for folder in Path(tempfile.gettempdir()).glob("bokin-split-*"):
+        try:
+            if folder != _UPLOAD_DIR and time.time() - folder.stat().st_mtime > max_age:
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            pass
+
+
+_prune_old_uploads()
+
+
+def _split_options(data) -> dict:
+    try:
+        min_track = float(data.get("min_track") or splitter.DEFAULT_MIN_TRACK)
+    except (TypeError, ValueError):
+        raise ClipError("Độ dài tối thiểu mỗi bài không hợp lệ.") from None
+    if not 5 <= min_track <= 3600:
+        raise ClipError("Độ dài tối thiểu mỗi bài phải từ 5 giây đến 60 phút.")
+    sensitivity = data.get("sensitivity") or "normal"
+    if sensitivity not in splitter.SENSITIVITY:
+        raise ClipError("Độ nhạy không hợp lệ.")
+    return {"min_track": min_track, "sensitivity": sensitivity}
+
+
+def _store_upload(upload) -> tuple[Path, str]:
+    """Lưu file người dùng tải lên vào thư mục tạm. Chỉ giữ file mới nhất cho đỡ tốn ổ đĩa."""
+    name = Path(upload.filename or "nhac.mp3").name
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    for token in [token for token, entry in _SPLITS.items() if entry["uploaded"]]:
+        del _SPLITS[token]
+    for old in _UPLOAD_DIR.iterdir():
+        old.unlink(missing_ok=True)
+    path = _UPLOAD_DIR / f"{secrets.token_hex(4)}{Path(name).suffix.lower() or '.mp3'}"
+    upload.save(path)
+    return path, name
+
+
+@app.post("/api/split/analyze")
+def split_analyze():
+    """Nhận một file (đường dẫn trên máy này, hoặc tải lên) và trả về danh sách bài nhận diện được."""
+    upload = request.files.get("file")
+    data = request.form if upload else (request.get_json(silent=True) or {})
+    if not upload and not _from_this_computer():
+        return _not_local()
+    try:
+        options = _split_options(data)
+        if upload:
+            path, name = _store_upload(upload)
+        else:
+            path = Path(str(data.get("path") or "").strip().strip('"')).expanduser()
+            if not path.is_absolute():
+                raise ClipError("Hãy chọn file, hoặc dán đường dẫn đầy đủ của file nhạc.")
+            if not path.is_file():
+                raise ClipError(f"Không tìm thấy file: {path}")
+            name = path.name
+        analysis = splitter.analyze(path, **options)
+    except ClipError as e:
+        return jsonify(error=str(e)), 400
+    except OSError as e:
+        return jsonify(error=f"Không đọc được file: {e}"), 400
+
+    token = secrets.token_urlsafe(9)
+    _SPLITS[token] = {"path": path, "name": name, "analysis": analysis, "uploaded": bool(upload)}
+    return jsonify(id=token, name=name, duration=analysis.duration, method=analysis.method,
+                   tracks=[{"start": track.start, "title": track.title} for track in analysis.tracks])
+
+
+def _split_entry(token: str):
+    entry = _SPLITS.get(token)
+    if entry is None:
+        return None, (jsonify(error="Phiên tách bài đã hết hạn, hãy chọn lại file và phân tích lại."), 404)
+    return entry, None
+
+
+@app.get("/api/split/<token>/audio")
+def split_audio(token):
+    """Phát file đang tách để người dùng nghe thử các điểm cắt (hỗ trợ tua)."""
+    entry, error = _split_entry(token)
+    if error:
+        return error
+    mimetype = mimetypes.guess_type(entry["name"])[0] or "audio/mpeg"
+    return send_file(entry["path"], mimetype=mimetype, conditional=True)
+
+
+def _tracks_from_request(rows, duration: float) -> list[splitter.Track]:
+    """Danh sách bài người dùng đã xem lại: mỗi bài kéo dài đến đầu bài sau (kể cả bài bị bỏ chọn)."""
+    if not isinstance(rows, list) or not rows:
+        raise ClipError("Chưa có bài nào để cắt.")
+    parsed = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ClipError("Danh sách bài không hợp lệ.")
+        start = parse_seconds(row.get("start"), 0)
+        if not 0 <= start < duration:
+            raise ClipError(f"Thời điểm {row.get('start')} nằm ngoài file (file dài {duration:.0f} giây).")
+        parsed.append((start, str(row.get("title") or "").strip(), row.get("include", True) is not False))
+    parsed.sort(key=lambda row: row[0])
+
+    tracks = []
+    for i, (start, title, include) in enumerate(parsed):
+        end = parsed[i + 1][0] if i + 1 < len(parsed) else duration
+        if include and end - start >= 0.5:
+            tracks.append(splitter.Track(start, end, title or f"Bài {len(tracks) + 1:02d}"))
+    if not tracks:
+        raise ClipError("Hãy chọn ít nhất một bài để cắt.")
+    return tracks
+
+
+@app.post("/api/split/<token>/cut")
+def split_cut(token):
+    entry, error = _split_entry(token)
+    if error:
+        return error
+    analysis = entry["analysis"]
+    stem = Path(entry["name"]).stem
+    out_dir = OUTPUT_DIR / (splitter.safe_filename(f"{stem} (tách bài)") or "Tách bài")
+    try:
+        tracks = _tracks_from_request((request.get_json(silent=True) or {}).get("tracks"), analysis.duration)
+        files = splitter.cut_tracks(entry["path"], tracks, out_dir, album=analysis.title or stem,
+                                    artist=analysis.artist)
+    except ClipError as e:
+        return jsonify(error=str(e)), 400
+    except OSError as e:
+        return jsonify(error=f"Không lưu được vào {out_dir}: {e.strerror or e}"), 400
+    return jsonify(folder=str(out_dir), files=[file.name for file in files])
 
 
 if __name__ == "__main__":

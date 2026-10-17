@@ -189,6 +189,16 @@ class Api:
         result = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=current or "")
         return result[0] if result else None
 
+    def choose_file(self, current: str = "") -> str | None:
+        """Chọn file nhạc cần tách bài (đọc thẳng từ ổ đĩa, không phải tải lên)."""
+        import webview
+
+        result = self._window.create_file_dialog(
+            webview.FileDialog.OPEN, directory=current or "",
+            file_types=("Nhạc và video (*.mp3;*.m4a;*.aac;*.wav;*.flac;*.ogg;*.opus;*.mp4;*.webm;*.mkv)",
+                        "Tất cả file (*.*)"))
+        return result[0] if result else None
+
 
 def _window_size(webview) -> tuple[int, int]:
     try:
