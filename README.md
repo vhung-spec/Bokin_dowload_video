@@ -1,6 +1,7 @@
-# Bokin Clip: tải nhanh 15 giây đầu của video YouTube
+# Bokin Clip: tải nhanh video và nhạc YouTube
 
-Dán link YouTube, bấm nút, nhận file `.mp4` của 15 giây đầu (hoặc bất kỳ đoạn nào bạn chọn).
+Dán link YouTube, bấm nút, nhận file `.mp4` của 15 giây đầu (hoặc bất kỳ đoạn nào bạn chọn), hoặc
+file nhạc `.mp3` của cả bài / một đoạn.
 
 **Vì sao nhanh?** App không tải cả video rồi mới cắt. [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 lấy link stream, app đọc bảng mục lục ở đầu stream rồi chỉ tải đúng các khúc chứa đoạn cần
@@ -75,7 +76,12 @@ Các tuỳ chọn:
 
 - **Bắt đầu**: thời điểm bắt đầu, nhập số giây (`90`) hoặc `mm:ss` (`1:30`). Mặc định `0`.
 - **Độ dài**: số giây cần lấy. Mặc định `15`, tối đa `300`.
-- **Chất lượng**: 360p, 480p, 720p hoặc 1080p. Chất lượng thấp hơn thì tải nhanh hơn.
+- **Tải về**: **Video (MP4)** hoặc **Nhạc (MP3)**.
+  - Nhạc mặc định tải **cả bài** (tick "Tải cả bài"). Bỏ tick để chỉ lấy một đoạn theo "Bắt đầu" và
+    "Độ dài".
+  - Nhạc chỉ tải stream âm thanh (không tải hình), lưu MP3 192 kbps, có sẵn tên bài và kênh trong
+    thông tin file.
+- **Chất lượng** (chỉ với video): 360p, 480p, 720p hoặc 1080p. Chất lượng thấp hơn thì tải nhanh hơn.
 - **Cắt chính xác từng khung hình**: encode lại để điểm cắt chính xác tuyệt đối (chậm hơn).
   Khi bắt đầu từ giây 0 thì không cần bật tuỳ chọn này.
 - **Lưu vào**: thư mục lưu video, dùng chung cho cả hai tab. Mặc định là `Downloads/Bokin Clip`.
@@ -107,6 +113,8 @@ python clipper.py "https://youtu.be/VIDEO_ID" -s 1:30 -d 20 -q 480         # 20 
 python clipper.py "https://youtu.be/VIDEO_ID" -o ~/Videos --precise
 python clipper.py "https://youtu.be/ID_1" "https://youtu.be/ID_2"          # nhiều video
 python clipper.py --file danh-sach.txt                                     # link trong file .txt
+python clipper.py "https://youtu.be/VIDEO_ID" --audio                       # nhạc MP3 cả bài
+python clipper.py "https://youtu.be/VIDEO_ID" --audio -s 1:00 -d 30         # nhạc 30 giây từ phút 1:00
 ```
 
 ## Chạy test

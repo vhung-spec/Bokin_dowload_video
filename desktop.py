@@ -164,6 +164,13 @@ def smoke_test() -> int:
     if "Bokin Clip" not in page or response.status != 200:
         print("smoke test FAILED: trang chủ không đúng")
         return 1
+    ffmpeg = clipper._ffmpeg_location() or "ffmpeg"
+    encoders = subprocess.run([ffmpeg, "-hide_banner", "-encoders"], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", **NO_WINDOW).stdout
+    missing = [name for name in ("libmp3lame", "libx264") if name not in encoders]  # nhạc MP3, cắt chính xác
+    if missing:
+        print(f"smoke test FAILED: ffmpeg ({ffmpeg}) thiếu bộ mã hoá {', '.join(missing)}")
+        return 1
     print(f"smoke test ok: {url} | app {web.APP_VERSION} | yt-dlp {yt_dlp.version.__version__}"
           f" | ffmpeg {clipper._ffmpeg_location() or 'PATH'} | bundled ffmpeg {imageio_ffmpeg.get_ffmpeg_exe()}"
           f" | js {clipper._js_runtimes()}")

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -36,7 +37,7 @@ from clipper import (
     validate_youtube_url,
 )
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 SETTINGS_FILE = Path(__file__).with_name("settings.json")
 NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
@@ -97,6 +98,10 @@ def ping():
     return jsonify(ok=True)
 
 
+def _flag(value) -> bool:
+    return str(value or "").lower() in ("1", "true", "on", "yes")
+
+
 def _clip_options(data) -> tuple[str, dict]:
     url = validate_youtube_url(data.get("url", ""))
     try:
@@ -105,11 +110,14 @@ def _clip_options(data) -> tuple[str, dict]:
         quality = None
     if quality not in QUALITIES:
         raise ClipError(f"Chất lượng phải là một trong: {', '.join(map(str, QUALITIES))}.")
+    audio = data.get("kind") == "audio"  # "video" (mặc định) hoặc "audio" (nhạc MP3)
+    full = audio and _flag(data.get("full"))  # nhạc: lấy đến hết video
     return url, {
         "start": parse_seconds(data.get("start"), 0),
-        "duration": parse_seconds(data.get("duration"), DEFAULT_DURATION),
+        "duration": None if full else parse_seconds(data.get("duration"), DEFAULT_DURATION),
         "max_height": quality,
-        "precise": str(data.get("precise", "")).lower() in ("1", "true", "on", "yes"),
+        "precise": _flag(data.get("precise")),
+        "audio": audio,
     }
 
 
@@ -148,7 +156,8 @@ def clip():
         target, _ = _download_to_output(request.get_json(silent=True) or request.form)
     except ClipError as e:
         return jsonify(error=str(e)), 400
-    response = send_file(target, mimetype="video/mp4", as_attachment=True, download_name=target.name)
+    mimetype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    response = send_file(target, mimetype=mimetype, as_attachment=True, download_name=target.name)
     response.headers["X-Saved-Path"] = quote(str(target))
     return response
 

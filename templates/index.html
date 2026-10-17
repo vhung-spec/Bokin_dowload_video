@@ -19,6 +19,7 @@
       }
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }  /* để display: flex/grid của từng phần không làm hiện lại phần đã ẩn */
     body {
       margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
       font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -38,6 +39,9 @@
     textarea { min-height: 140px; resize: vertical; font-size: .9rem; }
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .row.two { grid-template-columns: repeat(2, 1fr); }
+    input:disabled { opacity: .5; }
+    .result audio { width: 100%; }
     .check { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: .875rem; }
     .check input { width: auto; }
     .hint { margin-top: 6px; font-size: .8rem; color: var(--muted); }
@@ -51,12 +55,13 @@
       padding: 6px 12px; font-size: .875rem; font-weight: 600;
       color: var(--text); background: transparent; border: 1px solid var(--border);
     }
-    .tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 12px; background: var(--tab); border-radius: 10px; }
-    .tabs button {
+    .tabs, .segmented { display: flex; gap: 4px; padding: 4px; background: var(--tab); border-radius: 10px; }
+    .tabs { margin-bottom: 12px; }
+    .tabs button, .segmented button {
       flex: 1; padding: 8px; font-weight: 600; font-size: .9rem; color: var(--muted);
       background: transparent; border: 0;
     }
-    .tabs button[aria-selected="true"] { color: var(--text); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+    .tabs button[aria-selected="true"], .segmented button[aria-checked="true"] { color: var(--text); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
     .status { margin-top: 12px; min-height: 1.5em; font-size: .9rem; color: var(--muted); }
     .status.error { color: var(--error); }
     .result { margin-top: 16px; }
@@ -93,8 +98,8 @@
 </head>
 <body>
 <main>
-  <h1>Tải nhanh đoạn đầu video YouTube</h1>
-  <p class="sub">Chỉ tải đúng đoạn cần, không tải cả video, nên xong sau vài giây.</p>
+  <h1>Tải nhanh video và nhạc YouTube</h1>
+  <p class="sub">Chỉ tải đúng đoạn cần, không tải cả video, nên xong sau vài giây. Hoặc lấy nhạc MP3 cả bài.</p>
 
   <div class="tabs" role="tablist">
     <button type="button" role="tab" id="tab-one" aria-selected="true">Một video</button>
@@ -115,7 +120,15 @@
       <div id="urls-count" class="hint">Dán cả đoạn văn cũng được, app sẽ tự lọc ra các link.</div>
     </div>
 
-    <div class="row">
+    <div class="field">
+      <label id="kind-label">Tải về</label>
+      <div class="segmented" role="radiogroup" aria-labelledby="kind-label">
+        <button type="button" role="radio" id="kind-video" aria-checked="true">Video (MP4)</button>
+        <button type="button" role="radio" id="kind-audio" aria-checked="false">Nhạc (MP3)</button>
+      </div>
+    </div>
+
+    <div class="row" id="time-row">
       <div>
         <label for="start">Bắt đầu</label>
         <input id="start" name="start" value="0" placeholder="0 hoặc 1:30" title="Số giây hoặc mm:ss">
@@ -125,7 +138,7 @@
         <input id="duration" name="duration" type="number" min="1" max="{{ max_duration }}" step="any"
                value="{{ default_duration }}">
       </div>
-      <div>
+      <div id="quality-field">
         <label for="quality">Chất lượng</label>
         <select id="quality" name="quality">
           {% for q in qualities %}
@@ -135,7 +148,8 @@
       </div>
     </div>
 
-    <label class="check"><input id="precise" name="precise" type="checkbox"> Cắt chính xác từng khung hình (chậm hơn)</label>
+    <label class="check" id="precise-label"><input id="precise" name="precise" type="checkbox"> Cắt chính xác từng khung hình (chậm hơn)</label>
+    <label class="check" id="full-label" hidden><input id="full" name="full" type="checkbox" checked> Tải cả bài (đến hết video)</label>
 
     <div class="field">
       <label for="folder">Lưu vào</label>
@@ -153,7 +167,8 @@
   </form>
 
   <div id="result" class="result" hidden>
-    <video id="preview" controls playsinline></video>
+    <video id="preview-video" controls playsinline hidden></video>
+    <audio id="preview-audio" controls hidden></audio>
     <div class="saved">Đã lưu vào: <span id="saved-path"></span></div>
     <div class="result-actions">
       <button class="secondary open-folder" type="button">Mở thư mục</button>
@@ -180,16 +195,24 @@
   const form = $("form"), button = $("submit"), statusBox = $("status");
   const CONCURRENCY = 3;  // số video tải cùng lúc ở tab "Nhiều video"
   const LABELS = { waiting: "Đang chờ", working: "Đang tải…", done: "Xong", error: "Lỗi", stopped: "Đã dừng" };
-  let mode = "one", objectUrl = null, items = [], running = false, stopRequested = false;
+  let mode = "one", kind = "video", objectUrl = null, items = [], running = false, stopRequested = false;
 
   function extractLinks(text) {
     return [...new Set(text.match(/https?:\/\/[^\s"'<>,]+/g) || [])];
   }
 
-  function updateButton() {
+  // Mô tả việc sẽ làm, vd. "15 giây đầu", "nhạc MP3 cả bài", "nhạc 20 giây từ 1:30".
+  function describe() {
     const start = $("start").value.trim();
+    const fromStart = start === "" || start === "0";
+    if (kind === "audio" && $("full").checked) return fromStart ? "nhạc MP3 cả bài" : `nhạc MP3 từ ${start} đến hết`;
     const duration = $("duration").value || "{{ default_duration }}";
-    const what = (start === "" || start === "0") ? `${duration} giây đầu` : `${duration} giây từ ${start}`;
+    const what = fromStart ? `${duration} giây đầu` : `${duration} giây từ ${start}`;
+    return kind === "audio" ? `nhạc ${what}` : what;
+  }
+
+  function updateButton() {
+    const what = describe();
     if (mode === "one") {
       button.textContent = `Tải ${what}`;
     } else {
@@ -201,6 +224,23 @@
     }
   }
   ["start", "duration", "urls"].forEach((id) => $(id).addEventListener("input", updateButton));
+
+  function setKind(next) {
+    kind = next;
+    const audio = kind === "audio";
+    $("kind-video").setAttribute("aria-checked", !audio);
+    $("kind-audio").setAttribute("aria-checked", audio);
+    $("quality-field").hidden = audio;  // nhạc không có độ phân giải
+    $("time-row").classList.toggle("two", audio);
+    $("precise-label").hidden = audio;  // nhạc luôn được cắt chính xác
+    $("full-label").hidden = !audio;
+    $("duration").disabled = audio && $("full").checked;
+    updateButton();
+    try { localStorage.setItem("bokin-kind", kind); } catch {}
+  }
+  $("kind-video").addEventListener("click", () => setKind("video"));
+  $("kind-audio").addEventListener("click", () => setKind("audio"));
+  $("full").addEventListener("change", () => setKind(kind));
 
   function setMode(next) {
     mode = next;
@@ -221,8 +261,10 @@
 
   function options() {
     return {
+      kind,
       start: $("start").value,
       duration: $("duration").value,
+      full: $("full").checked,
       quality: $("quality").value,
       precise: $("precise").checked,
     };
@@ -251,7 +293,7 @@
   }
 
   async function downloadOne() {
-    statusBox.textContent = "Đang tải đoạn video…";
+    statusBox.textContent = kind === "audio" ? "Đang tải nhạc…" : "Đang tải đoạn video…";
     const began = performance.now();
     const response = await postJson("/api/clip", { url: $("url").value, ...options() });
     if (!response.ok) throw await errorFrom(response);
@@ -261,7 +303,13 @@
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = URL.createObjectURL(blob);
 
-    $("preview").src = objectUrl;
+    const isAudio = blob.type.startsWith("audio/") || name.toLowerCase().endsWith(".mp3");
+    const [show, hide] = isAudio ? [$("preview-audio"), $("preview-video")] : [$("preview-video"), $("preview-audio")];
+    hide.pause();
+    hide.removeAttribute("src");
+    hide.hidden = true;
+    show.src = objectUrl;
+    show.hidden = false;
     const link = $("download");
     link.href = objectUrl;
     link.download = name;
@@ -444,8 +492,12 @@
   // Báo cho app biết trang vẫn đang mở (khi chạy bằng trình duyệt, app tự tắt sau khi trang đóng).
   setInterval(() => fetch("/api/ping").catch(() => {}), 30000);
 
-  let savedMode = "one";
-  try { savedMode = localStorage.getItem("bokin-mode") || "one"; } catch {}
+  let savedMode = "one", savedKind = "video";
+  try {
+    savedMode = localStorage.getItem("bokin-mode") || "one";
+    savedKind = localStorage.getItem("bokin-kind") || "video";
+  } catch {}
+  setKind(savedKind === "audio" ? "audio" : "video");
   setMode(savedMode === "many" ? "many" : "one");
 </script>
 </body>

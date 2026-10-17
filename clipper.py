@@ -14,6 +14,7 @@ Dùng từ dòng lệnh:
     python clipper.py "https://www.youtube.com/watch?v=..."            # 15s đầu
     python clipper.py URL --start 1:30 --duration 20 --quality 480
     python clipper.py URL1 URL2 URL3                                   # nhiều video
+    python clipper.py URL --audio                                      # nhạc MP3 cả bài
     python clipper.py --file danh-sach.txt                             # link trong file .txt
 """
 
@@ -53,6 +54,8 @@ YOUTUBE_HOSTS = {
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _OUTTMPL = "%(title).80B [%(id)s] %(section_start)ds-%(section_end)ds.%(ext)s"
+_FULL_TMPL = "%(title).80B [%(id)s].%(ext)s"  # nhạc cả bài: không cần ghi đoạn cắt vào tên file
+AUDIO_BITRATE = "192k"  # âm thanh gốc của YouTube chỉ khoảng 128-160 kbps, cao hơn cũng không hay hơn
 _CHUNK_SIZE = 10 << 20  # YouTube chặn request lớn hơn ~10MB; yt-dlp cũng chia nhỏ như vậy
 _HEADER_GUESS = 64 << 10  # ftyp + moov + sidx của YouTube thường chỉ vài KB
 # Bản cài đặt chạy không có cửa sổ dòng lệnh: đừng để ffmpeg bật lên một cửa sổ đen.
@@ -83,14 +86,23 @@ class Clip:
 @dataclass
 class _Section:
     start: float
-    duration: float
+    duration: float | None  # None: đến hết video
     max_height: int
     precise: bool
     quiet: bool
+    audio: bool = False  # chỉ lấy tiếng, xuất MP3
 
     @property
-    def end(self) -> float:
-        return self.start + self.duration
+    def end(self) -> float | None:
+        return None if self.duration is None else self.start + self.duration
+
+    def end_within(self, total: float | None) -> float:
+        """Điểm kết thúc thật, không vượt quá độ dài video (math.inf nếu không biết)."""
+        end = math.inf if self.end is None else self.end
+        return min(end, total) if total else end
+
+    def outtmpl(self, end: float) -> str:
+        return _FULL_TMPL if self.duration is None and (self.start == 0 or not math.isfinite(end)) else _OUTTMPL
 
 
 @dataclass
@@ -184,10 +196,11 @@ def download_clip(
     url: str,
     out_dir: str | Path,
     start: float = 0,
-    duration: float = DEFAULT_DURATION,
+    duration: float | None = DEFAULT_DURATION,
     max_height: int = DEFAULT_QUALITY,
     precise: bool = False,
     quiet: bool = True,
+    audio: bool = False,
 ) -> Clip:
     """Tải đoạn [start, start + duration) của video về ``out_dir``.
 
@@ -197,14 +210,20 @@ def download_clip(
     ``precise=True`` sẽ encode lại để cắt đúng từng khung hình (chậm hơn). Mặc
     định chỉ copy stream nên rất nhanh; khi ``start`` > 0 điểm đầu có thể lệch
     về keyframe gần nhất.
+
+    ``audio=True`` chỉ tải tiếng và lưu thành MP3 (luôn cắt chính xác vì đằng nào
+    cũng phải mã hoá lại). Khi đó ``duration=None`` nghĩa là lấy đến hết video.
     """
     if start < 0:
         raise ClipError("Thời điểm bắt đầu không được âm.", final=True)
-    if not 0 < duration <= MAX_DURATION:
+    if duration is None:
+        if not audio:
+            raise ClipError("Hãy nhập độ dài đoạn video cần tải.", final=True)
+    elif not 0 < duration <= MAX_DURATION:
         raise ClipError(f"Độ dài đoạn cắt phải lớn hơn 0 và tối đa {MAX_DURATION} giây.", final=True)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    section = _Section(start, duration, max_height, precise, quiet)
+    section = _Section(start, duration, max_height, precise, quiet, audio=audio)
 
     attempts = (
         (_download_by_index, {}),
@@ -276,24 +295,31 @@ def _check_start(info: dict, start: float) -> None:
 # --- Cách 1: tự tải đúng các khúc cần dựa vào mục lục sidx ---------------------------------
 
 def _download_by_index(url: str, out_dir: Path, section: _Section, extractor_args: dict) -> Clip:
-    h = f"[height<={section.max_height}]"
-    selector = (f"bv*{h}[vcodec^=avc1][container=mp4_dash]+ba[container=m4a_dash]"
-                f"/bv*{h}[container=mp4_dash]+ba[container=m4a_dash]/b")
+    if section.audio:
+        selector, wanted = "ba[container=m4a_dash]/ba/b", ["m4a_dash"]
+    else:
+        h = f"[height<={section.max_height}]"
+        selector = (f"bv*{h}[vcodec^=avc1][container=mp4_dash]+ba[container=m4a_dash]"
+                    f"/bv*{h}[container=mp4_dash]+ba[container=m4a_dash]/b")
+        wanted = ["mp4_dash", "m4a_dash"]
     with _youtube_dl(section.quiet, format=selector, extractor_args=extractor_args) as ydl:
         info = _single_video(ydl.extract_info(url, download=False))
         _check_start(info, section.start)
-        formats = info.get("requested_formats") or []
-        if len(formats) != 2 or any(f.get("protocol") not in ("https", "http") for f in formats):
-            raise _Unsupported("không có stream DASH mp4 riêng cho hình và tiếng")
+        formats = info.get("requested_formats") or [info]
+        if ([f.get("container") for f in formats] != wanted
+                or any(f.get("protocol") not in ("https", "http") for f in formats)):
+            raise _Unsupported("không có stream DASH mp4/m4a phù hợp")
 
-        end = min(section.end, info.get("duration") or section.end)
+        end = section.end_within(info.get("duration"))
         out_path = Path(ydl.prepare_filename(
-            {**info, "ext": "mp4", "section_start": section.start, "section_end": end},
-            outtmpl=str(out_dir / _OUTTMPL)))
+            {**info, "ext": "mp3" if section.audio else "mp4", "section_start": section.start,
+             "section_end": end if math.isfinite(end) else 0},
+            outtmpl=str(out_dir / section.outtmpl(end))))
         parts = [out_path.with_name(f"{out_path.stem}.part{i}.{f['ext']}") for i, f in enumerate(formats)]
+        metadata = {"title": info.get("title"), "artist": info.get("artist") or info.get("uploader")}
         try:
             starts = [_fetch_section(ydl, f, section.start, end, part) for f, part in zip(formats, parts)]
-            _cut(list(zip(parts, starts)), out_path, section)
+            _cut(list(zip(parts, starts)), out_path, section, metadata)
         except RequestError as e:
             raise ClipError(f"Không tải được video: {_clean_message(e)}") from e
         finally:
@@ -301,7 +327,8 @@ def _download_by_index(url: str, out_dir: Path, section: _Section, extractor_arg
                 part.unlink(missing_ok=True)
 
     return Clip(path=out_path, title=info.get("title") or info.get("id") or "video",
-                video_id=info.get("id") or "", start=section.start, end=end)
+                video_id=info.get("id") or "", start=section.start,
+                end=end if math.isfinite(end) else section.start)
 
 
 def _iter_bytes(ydl, fmt: dict, first: int, last: int):
@@ -394,8 +421,9 @@ def _parse_sidx(data: bytes, pos: int, header: int, size: int) -> list[_Segment]
     return segments
 
 
-def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section) -> None:
-    """Ghép các stream đã tải rồi cắt đúng [start, start + duration] bằng ffmpeg trên máy."""
+def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section, metadata: dict | None = None) -> None:
+    """Ghép các stream đã tải rồi cắt đúng [start, start + duration] bằng ffmpeg trên máy
+    (với nhạc: mã hoá thành MP3 và ghi tên bài, kênh vào file)."""
     cmd = [_ffmpeg_location() or "ffmpeg", "-y", "-v", "error"]
     for part, part_start in parts:
         if section.start > part_start:
@@ -403,17 +431,24 @@ def _cut(parts: list[tuple[Path, float]], out_path: Path, section: _Section) -> 
         cmd += ["-i", str(part)]
     for i in range(len(parts)):
         cmd += ["-map", str(i)]
-    cmd += ["-t", f"{section.duration:.3f}"]
-    if section.precise:
-        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]
+    if section.duration is not None:
+        cmd += ["-t", f"{section.duration:.3f}"]
+    if section.audio:
+        cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", AUDIO_BITRATE]
+        for key, value in (metadata or {}).items():
+            if value:
+                cmd += ["-metadata", f"{key}={value}"]
+    elif section.precise:
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart"]
     else:
-        cmd += ["-c", "copy"]
-    cmd += ["-movflags", "+faststart", str(out_path)]
+        cmd += ["-c", "copy", "-movflags", "+faststart"]
+    cmd += [str(out_path)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **_NO_WINDOW)
     if result.returncode != 0 or not out_path.is_file() or out_path.stat().st_size == 0:
         detail = (result.stderr.strip().splitlines() or [_ffmpeg_error(result.returncode)])[-1]
-        raise ClipError(f"ffmpeg không cắt được video: {detail}")
+        raise ClipError(f"ffmpeg không xử lý được file: {detail}")
 
 
 # --- Cách 2: để ffmpeg tự đọc đoạn cần từ link stream -------------------------------------
@@ -423,19 +458,30 @@ def _download_with_ffmpeg(url: str, out_dir: Path, section: _Section, extractor_
         total = info.get("duration")
         if total and section.start >= total:
             return  # không có gì để tải, báo lỗi bên dưới
-        yield {"start_time": section.start, "end_time": section.end}
+        yield {"start_time": section.start, "end_time": section.end_within(total)}
 
-    h = f"[height<={section.max_height}]"
-    with _youtube_dl(
-        section.quiet,
-        # Ưu tiên HLS: ffmpeg tải từng segment nhỏ thay vì một link https lớn.
-        format=f"b{h}[protocol^=m3u8]/{format_selector(section.max_height)}",
-        merge_output_format="mp4",
-        download_ranges=ranges,
-        force_keyframes_at_cuts=section.precise,
-        outtmpl=str(out_dir / _OUTTMPL),
-        extractor_args=extractor_args,
-    ) as ydl:
+    if section.audio:
+        params = {
+            "format": "ba[ext=m4a]/ba/b",
+            "postprocessors": [
+                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": AUDIO_BITRATE.rstrip("k")},
+                {"key": "FFmpegMetadata", "add_metadata": True},
+            ],
+        }
+        if section.start or section.duration is not None:
+            params["download_ranges"] = ranges  # cả bài thì để yt-dlp tải bình thường
+    else:
+        h = f"[height<={section.max_height}]"
+        params = {
+            # Ưu tiên HLS: ffmpeg tải từng segment nhỏ thay vì một link https lớn.
+            "format": f"b{h}[protocol^=m3u8]/{format_selector(section.max_height)}",
+            "merge_output_format": "mp4",
+            "download_ranges": ranges,
+            "force_keyframes_at_cuts": section.precise,
+        }
+    outtmpl = _FULL_TMPL if section.duration is None and section.start == 0 else _OUTTMPL
+    with _youtube_dl(section.quiet, outtmpl=str(out_dir / outtmpl), extractor_args=extractor_args,
+                     **params) as ydl:
         info = _single_video(ydl.extract_info(url, download=True))
 
     downloads = info.get("requested_downloads") or []
@@ -452,7 +498,7 @@ def _download_with_ffmpeg(url: str, out_dir: Path, section: _Section, extractor_
         title=info.get("title") or info.get("id") or "video",
         video_id=info.get("id") or "",
         start=done.get("section_start") or section.start,
-        end=done.get("section_end") or section.end,
+        end=done.get("section_end") or section.end or info.get("duration") or section.start,
     )
 
 
@@ -461,12 +507,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("urls", nargs="*", metavar="url", help="một hoặc nhiều link video YouTube")
     parser.add_argument("-f", "--file", help="file .txt chứa danh sách link (mỗi dòng một link)")
     parser.add_argument("-s", "--start", default="0", help="bắt đầu từ (giây hoặc mm:ss), mặc định 0")
-    parser.add_argument("-d", "--duration", default=str(DEFAULT_DURATION),
-                        help=f"độ dài đoạn cắt (giây), mặc định {DEFAULT_DURATION}")
+    parser.add_argument("-d", "--duration",
+                        help=f"độ dài đoạn cắt (giây), mặc định {DEFAULT_DURATION}; với --audio mặc định là cả bài")
     parser.add_argument("-q", "--quality", type=int, choices=QUALITIES, default=DEFAULT_QUALITY,
                         help=f"độ phân giải tối đa, mặc định {DEFAULT_QUALITY}p")
     parser.add_argument("-o", "--output", default="downloads", help="thư mục lưu, mặc định ./downloads")
     parser.add_argument("--precise", action="store_true", help="cắt chính xác từng khung hình (encode lại, chậm hơn)")
+    parser.add_argument("--audio", action="store_true", help="chỉ tải nhạc, lưu thành MP3")
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):  # đầu ra bị chuyển hướng trên Windows mặc định là cp1252
         with contextlib.suppress(AttributeError, ValueError):
@@ -485,9 +532,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         options = {
             "start": parse_seconds(args.start),
-            "duration": parse_seconds(args.duration, DEFAULT_DURATION),
+            "duration": None if args.audio and args.duration is None
+            else parse_seconds(args.duration, DEFAULT_DURATION),
             "max_height": args.quality,
             "precise": args.precise,
+            "audio": args.audio,
         }
     except ClipError as e:
         print(f"Lỗi: {e}", file=sys.stderr)

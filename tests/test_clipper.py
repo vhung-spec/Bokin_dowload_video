@@ -87,6 +87,25 @@ def test_cli_downloads_every_link_and_reports_failures(tmp_path, monkeypatch, ca
     assert "[3/3] Lỗi (https://example.com/x)" in err
 
 
+def test_video_needs_a_duration(tmp_path):
+    with pytest.raises(ClipError, match="độ dài"):
+        download_clip("https://youtu.be/x", tmp_path, duration=None)
+
+
+def test_cli_audio_defaults_to_whole_track(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_download(url, out_dir, **kwargs):
+        calls.append(kwargs)
+        return Clip(path=tmp_path / "a.mp3", title="a", video_id="a", start=0, end=60)
+
+    monkeypatch.setattr(clipper, "download_clip", fake_download)
+    assert main(["https://youtu.be/a", "--audio", "-o", str(tmp_path)]) == 0
+    assert main(["https://youtu.be/a", "--audio", "-d", "20", "-o", str(tmp_path)]) == 0
+    assert main(["https://youtu.be/a", "-o", str(tmp_path)]) == 0
+    assert [(c["audio"], c["duration"]) for c in calls] == [(True, None), (True, 20), (False, 15)]
+
+
 def test_format_selector_limits_height():
     assert "[height<=480]" in format_selector(480)
 
@@ -135,7 +154,8 @@ def test_final_errors_are_not_retried(tmp_path, monkeypatch):
 
 def probe(path):
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,start_time,duration",
+        ["ffprobe", "-v", "error", "-show_entries",
+         "format=duration:format_tags=title:stream=codec_type,codec_name,start_time,duration",
          "-of", "json", str(path)],
         capture_output=True, text=True, check=True,
     ).stdout
@@ -265,3 +285,33 @@ def test_dash_downloads_only_needed_segments(site, tmp_path, no_ffmpeg_fallback,
     total = (site["root"] / "video.mp4").stat().st_size + (site["root"] / "audio.m4a").stat().st_size
     assert media < total * 0.4
     assert os.listdir(tmp_path) == [clip.path.name]  # không để lại file tạm
+
+
+def assert_mp3(path, duration, title):
+    info = probe(path)
+    assert path.suffix == ".mp3"
+    assert [(st["codec_type"], st["codec_name"]) for st in info["streams"]] == [("audio", "mp3")]
+    assert float(info["format"]["duration"]) == pytest.approx(duration, abs=0.3)
+    assert info["format"]["tags"]["title"] == title
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("start, duration, expected, name", [
+    (37, 10, 10, "manifest [manifest] 37s-47s.mp3"),
+    (0, None, 60, "manifest [manifest].mp3"),  # cả bài
+])
+def test_dash_audio_downloads_only_the_audio_stream(site, tmp_path, no_ffmpeg_fallback, start, duration, expected, name):
+    site["served"].clear()
+    clip = download_clip(f"{site['base']}/manifest.mpd", tmp_path, start=start, duration=duration, audio=True)
+
+    assert clip.path.name == name
+    assert_mp3(clip.path, expected, "manifest")
+    assert "video.mp4" not in {served for served, _ in site["served"]}  # không đọc stream hình chút nào
+    assert os.listdir(tmp_path) == [clip.path.name]
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("start, duration, expected", [(5, 8, 8), (0, None, 40)])
+def test_audio_from_regular_video_uses_ytdlp_fallback(site, tmp_path, start, duration, expected):
+    clip = download_clip(f"{site['base']}/sample.mp4", tmp_path, start=start, duration=duration, audio=True)
+    assert_mp3(clip.path, expected, "sample")

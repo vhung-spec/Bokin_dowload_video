@@ -56,7 +56,8 @@ def test_single_clip_is_saved_and_sent_back(client, monkeypatch, isolated_folder
     assert saved.read_bytes() == b"fake-mp4"
     call = calls[0]
     assert not call.pop("out_dir").exists()  # tải trong thư mục tạm, đã dọn
-    assert call == {"url": "https://youtu.be/abc", "start": 60, "duration": 20, "max_height": 480, "precise": True}
+    assert call == {"url": "https://youtu.be/abc", "start": 60, "duration": 20, "max_height": 480, "precise": True,
+                    "audio": False}
 
 
 def test_defaults_to_first_15_seconds(client, monkeypatch):
@@ -68,7 +69,23 @@ def test_defaults_to_first_15_seconds(client, monkeypatch):
 
     monkeypatch.setattr(web, "download_clip", fake_download)
     client.post("/api/clip", json={"url": "https://youtu.be/abc"})
-    assert calls == {"start": 0, "duration": 15, "max_height": 720, "precise": False}
+    assert calls == {"start": 0, "duration": 15, "max_height": 720, "precise": False, "audio": False}
+
+
+@pytest.mark.parametrize("body, audio, duration", [
+    ({"kind": "audio", "full": True}, True, None),  # nhạc cả bài
+    ({"kind": "audio", "full": False, "duration": "30"}, True, 30),  # nhạc một đoạn
+    ({"kind": "video", "full": True}, False, 15),  # "cả bài" chỉ áp dụng cho nhạc
+])
+def test_audio_options(client, monkeypatch, isolated_folders, body, audio, duration):
+    calls = []
+    monkeypatch.setattr(web, "download_clip", fake_clip(name="Bài hát [abc].mp3", calls=calls))
+    response = client.post("/api/clip", json={"url": "https://youtu.be/abc", **body})
+
+    assert response.status_code == 200
+    assert (calls[0]["audio"], calls[0]["duration"]) == (audio, duration)
+    assert response.mimetype == "audio/mpeg"
+    assert (isolated_folders / "Bài hát [abc].mp3").exists()
 
 
 @pytest.mark.parametrize("body", [
