@@ -77,7 +77,7 @@ def ffmpeg(*args):
 def probe(path):
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
                           "format=duration:format_tags=title,track,album,artist", "-of", "json", str(path)],
-                         capture_output=True, text=True, check=True).stdout
+                         capture_output=True, text=True, encoding="utf-8", check=True).stdout
     return json.loads(out)["format"]
 
 
@@ -196,11 +196,13 @@ def test_split_api_by_upload(client, compilation):
 
 @pytest.mark.parametrize("body, message", [
     ({"path": "nhac.mp3"}, "đường dẫn đầy đủ"),
-    ({"path": "/khong/co/file.mp3"}, "Không tìm thấy file"),
+    ({"path": "MISSING"}, "Không tìm thấy file"),  # đường dẫn đầy đủ (có ổ đĩa trên Windows) nhưng không có file
     ({"path": "/x.mp3", "sensitivity": "cực cao"}, "Độ nhạy"),
     ({"path": "/x.mp3", "min_track": "1"}, "từ 5 giây"),
 ])
-def test_split_analyze_rejects_bad_input(client, body, message):
+def test_split_analyze_rejects_bad_input(client, tmp_path, body, message):
+    if body["path"] == "MISSING":
+        body = {"path": str(tmp_path / "khong-co.mp3")}
     response = client.post("/api/split/analyze", json=body)
     assert response.status_code == 400
     assert message in response.get_json()["error"]

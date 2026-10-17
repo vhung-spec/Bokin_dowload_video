@@ -157,7 +157,7 @@ def probe(path):
         ["ffprobe", "-v", "error", "-show_entries",
          "format=duration:format_tags=title:stream=codec_type,codec_name,start_time,duration",
          "-of", "json", str(path)],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, encoding="utf-8", check=True,
     ).stdout
     return json.loads(out)
 
