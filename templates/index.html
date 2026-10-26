@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bokin Clip</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #ffffff; --text: #1d2129; --muted: #5f6673;
+      --border: #d9dde3; --accent: #4f46e5; --accent-text: #ffffff; --error: #b42318;
+      --ok: #157f3c; --tab: #eceef2;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14161a; --card: #1e2127; --text: #e8eaed; --muted: #9aa0a6;
+        --border: #343842; --accent: #5850ec; --accent-text: #ffffff; --error: #ff8a80;
+        --ok: #6dd58c; --tab: #262a31;
+      }
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }  /* để display: flex/grid của từng phần không làm hiện lại phần đã ẩn */
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; justify-content: center; padding: 40px 16px;
+    }
+    main { width: 100%; max-width: 560px; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    p.sub { color: var(--muted); margin: 0 0 20px; }
+    form, .result {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    }
+    label { display: block; font-size: .875rem; color: var(--muted); margin-bottom: 4px; }
+    input, select, textarea {
+      width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    textarea { min-height: 140px; resize: vertical; font-size: .9rem; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .row.two { grid-template-columns: repeat(2, 1fr); }
+    input:disabled { opacity: .5; }
+    .result audio { width: 100%; }
+    .check { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: .875rem; }
+    .check input { width: auto; }
+    .hint { margin-top: 6px; font-size: .8rem; color: var(--muted); }
+    button { font: inherit; cursor: pointer; border-radius: 8px; }
+    button:disabled { opacity: .6; cursor: progress; }
+    .primary {
+      width: 100%; margin-top: 20px; padding: 12px; font-weight: 600;
+      color: var(--accent-text); background: var(--accent); border: 0;
+    }
+    .secondary {
+      padding: 6px 12px; font-size: .875rem; font-weight: 600;
+      color: var(--text); background: transparent; border: 1px solid var(--border);
+    }
+    .tabs, .segmented { display: flex; gap: 4px; padding: 4px; background: var(--tab); border-radius: 10px; }
+    .tabs { margin-bottom: 12px; }
+    .tabs button, .segmented button {
+      flex: 1; padding: 8px; font-weight: 600; font-size: .9rem; color: var(--muted);
+      background: transparent; border: 0;
+    }
+    .tabs button[aria-selected="true"], .segmented button[aria-checked="true"] { color: var(--text); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+    .status { margin-top: 12px; min-height: 1.5em; font-size: .9rem; color: var(--muted); }
+    .status.error { color: var(--error); }
+    .result { margin-top: 16px; }
+    .result video { width: 100%; border-radius: 8px; background: #000; }
+    .result a { display: inline-block; margin-top: 8px; color: var(--accent); font-weight: 600; word-break: break-all; }
+    .field { margin-top: 16px; }
+    .folder-row { display: flex; gap: 8px; }
+    .folder-row input { flex: 1; min-width: 0; font-size: .9rem; }
+    .folder-row button { flex: none; }
+    .folder-status { min-height: 1.2em; }
+    .folder-status.error { color: var(--error); }
+    .saved { margin-top: 8px; font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+    .result-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .result-actions a { margin-top: 0; font-size: .85rem; font-weight: 400; color: var(--muted); }
+    .batch-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .batch-head .actions { display: flex; gap: 8px; }
+    .batch-head + .items { margin-top: 12px; }
+    .items { list-style: none; margin: 0; padding: 0; }
+    .item { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+    .item .pick { flex: none; align-self: flex-start; width: auto; margin: 4px 0 0; }
+    .item.off > :not(.pick) { opacity: .45; }
+    .check.all { margin: 12px 0 8px; }
+    .badge {
+      flex: none; min-width: 76px; height: fit-content; padding: 2px 8px; text-align: center;
+      font-size: .75rem; font-weight: 600; border-radius: 999px; color: var(--muted); background: var(--tab);
+    }
+    .item[data-state="working"] .badge { color: var(--accent-text); background: var(--accent); }
+    .item[data-state="done"] .badge { color: var(--ok); }
+    .item[data-state="error"] .badge { color: var(--error); }
+    .item-body { min-width: 0; flex: 1; }
+    .item-title { font-size: .9rem; overflow-wrap: anywhere; }
+    .item-detail { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
+    .item[data-state="error"] .item-detail { color: var(--error); }
+    .tracks { list-style: none; margin: 8px 0 0; padding: 0; }
+    .track {
+      display: grid; grid-template-columns: auto 2em 6.5em 1fr 4.2em auto auto; gap: 8px; align-items: center;
+      padding: 6px 0; border-top: 1px solid var(--border);
+    }
+    .track input { padding: 6px 8px; font-size: .9rem; }
+    .track input[type="checkbox"] { width: auto; }
+    .track .num, .track .len { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .track.off > :not(.t-on) { opacity: .45; }
+    .track input.invalid { outline: 2px solid var(--error); }
+    .icon {
+      width: 32px; height: 32px; padding: 0; font-size: .85rem; color: var(--text);
+      background: transparent; border: 1px solid var(--border);
+    }
+    #split-audio { margin-top: 12px; }
+    #split-result .primary { margin-top: 16px; }
+    footer { margin-top: 20px; text-align: center; font-size: .75rem; color: var(--muted); }
+    @media (max-width: 520px) {
+      .track { grid-template-columns: auto 5.5em 1fr auto auto; }
+      .track .num, .track .len { display: none; }
+    }
+    @media (max-width: 420px) {
+      .row { grid-template-columns: 1fr 1fr; } .row > :last-child { grid-column: span 2; }
+      .tabs button { padding: 8px 2px; font-size: .82rem; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tải nhanh video và nhạc YouTube</h1>
+  <p class="sub">Chỉ tải đúng đoạn cần, không tải cả video, nên xong sau vài giây. Hoặc lấy nhạc MP3 cả bài.</p>
+
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tab-one" aria-selected="true">Một video</button>
+    <button type="button" role="tab" id="tab-many" aria-selected="false">Nhiều video</button>
+    <button type="button" role="tab" id="tab-split" aria-selected="false">Tách bài</button>
+    <button type="button" role="tab" id="tab-spotify" aria-selected="false">Spotify</button>
+  </div>
+
+  <form id="form">
+    <div id="one-input">
+      <label for="url">Link YouTube</label>
+      <input id="url" name="url" type="url" required autofocus
+             placeholder="https://www.youtube.com/watch?v=...">
+    </div>
+
+    <div id="many-input" hidden>
+      <label for="urls">Danh sách link YouTube (mỗi dòng một link)</label>
+      <textarea id="urls" name="urls" spellcheck="false"
+                placeholder="https://www.youtube.com/watch?v=...&#10;https://youtu.be/...&#10;..."></textarea>
+      <div id="urls-count" class="hint">Dán cả đoạn văn cũng được, app sẽ tự lọc ra các link.</div>
+    </div>
+
+    <div id="split-fields" hidden>
+      <label for="split-path">File nhạc cần tách (vd. video tổng hợp nhiều bài)</label>
+      <div class="folder-row">
+        <input id="split-path" spellcheck="false" autocomplete="off" placeholder="Bấm Chọn file… hoặc dán đường dẫn file">
+        <button id="split-choose" class="secondary" type="button">Chọn file…</button>
+      </div>
+      <input id="split-file" type="file" accept="audio/*,video/*,.mp3,.m4a,.flac,.ogg,.opus,.webm,.mkv" hidden>
+      <div class="row two">
+        <div>
+          <label for="split-min">Mỗi bài dài ít nhất (giây)</label>
+          <input id="split-min" type="number" min="5" max="3600" step="1" value="60">
+        </div>
+        <div>
+          <label for="split-sens">Độ nhạy</label>
+          <select id="split-sens">
+            <option value="low">Thấp (tách ít hơn)</option>
+            <option value="normal" selected>Thường</option>
+            <option value="high">Cao (tách nhiều hơn)</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint">Ưu tiên các chương có trong file (nhạc tải bằng app từ video có chia chương); không có thì
+        tìm khoảng lặng giữa các bài. Bạn xem lại, nghe thử và sửa trước khi cắt.</div>
+    </div>
+
+    <div id="spotify-input" hidden>
+      <label for="spotify-url">Link Spotify (bài hát, album hoặc playlist)</label>
+      <input id="spotify-url" inputmode="url" spellcheck="false" autocomplete="off"
+             placeholder="https://open.spotify.com/playlist/...">
+      <div class="hint">Nhạc trên Spotify được mã hoá nên app không tải trực tiếp: app đọc tên bài, nghệ sĩ, ảnh bìa
+        từ Spotify, tìm đúng bài đó trên YouTube rồi tải về MP3 (cả bài). Bản tìm được có thể khác bản trên
+        Spotify một chút; mỗi bài đều ghi rõ video YouTube đã dùng. Chỉ tải nhạc bạn được phép dùng.</div>
+    </div>
+
+    <div id="download-options">
+    <div class="field">
+      <label id="kind-label">Tải về</label>
+      <div class="segmented" role="radiogroup" aria-labelledby="kind-label">
+        <button type="button" role="radio" id="kind-video" aria-checked="true">Video (MP4)</button>
+        <button type="button" role="radio" id="kind-audio" aria-checked="false">Nhạc (MP3)</button>
+      </div>
+    </div>
+
+    <div class="row" id="time-row">
+      <div>
+        <label for="start">Bắt đầu</label>
+        <input id="start" name="start" value="0" placeholder="0 hoặc 1:30" title="Số giây hoặc mm:ss">
+      </div>
+      <div>
+        <label for="duration">Độ dài (giây)</label>
+        <input id="duration" name="duration" type="number" min="1" max="{{ max_duration }}" step="any"
+               value="{{ default_duration }}">
+      </div>
+      <div id="quality-field">
+        <label for="quality">Chất lượng</label>
+        <select id="quality" name="quality">
+          {% for q in qualities %}
+          <option value="{{ q }}" {% if q == default_quality %}selected{% endif %}>{{ q }}p</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <label class="check" id="precise-label"><input id="precise" name="precise" type="checkbox"> Cắt chính xác từng khung hình (chậm hơn)</label>
+    <label class="check" id="full-label" hidden><input id="full" name="full" type="checkbox" checked> Tải cả bài (đến hết video)</label>
+    </div>
+
+    <div class="field">
+      <label for="folder">Lưu vào</label>
+      <div class="folder-row">
+        <input id="folder" name="folder" value="{{ output_dir }}" spellcheck="false" autocomplete="off"
+               title="Gõ hoặc dán đường dẫn thư mục, hoặc bấm Chọn…">
+        <button id="choose-folder" class="secondary" type="button">Chọn…</button>
+        <button id="open-folder" class="secondary" type="button">Mở</button>
+      </div>
+      <div id="folder-status" class="hint folder-status"></div>
+    </div>
+
+    <button id="submit" class="primary" type="submit">Tải {{ default_duration }} giây đầu</button>
+    <div id="status" class="status" role="status"></div>
+  </form>
+
+  <div id="result" class="result" hidden>
+    <video id="preview-video" controls playsinline hidden></video>
+    <audio id="preview-audio" controls hidden></audio>
+    <div class="saved">Đã lưu vào: <span id="saved-path"></span></div>
+    <div class="result-actions">
+      <button class="secondary open-folder" type="button">Mở thư mục</button>
+      <button id="split-this" class="secondary" type="button" hidden>Tách bài trong file này</button>
+      <a id="download" href="#" {% if desktop %}hidden{% endif %}>Tải thêm một bản qua trình duyệt</a>
+    </div>
+  </div>
+
+  <section id="batch" class="result" hidden>
+    <div class="batch-head">
+      <strong class="batch-summary" role="status"></strong>
+      <div class="actions">
+        <button class="secondary stop" type="button" hidden>Dừng</button>
+        <button class="secondary retry" type="button" hidden>Tải lại link lỗi</button>
+        <button class="secondary open-folder" type="button">Mở thư mục</button>
+      </div>
+    </div>
+    <ol class="items"></ol>
+  </section>
+
+  <section id="spotify-result" class="result" hidden>
+    <div class="batch-head">
+      <strong class="batch-summary" role="status"></strong>
+      <div class="actions">
+        <button class="secondary stop" type="button" hidden>Dừng</button>
+        <button class="secondary retry" type="button" hidden>Tải lại bài lỗi</button>
+        <button id="spotify-open" class="secondary" type="button">Mở thư mục</button>
+      </div>
+    </div>
+    <div id="spotify-limited" class="hint" hidden>Spotify chỉ cho xem 100 bài đầu của playlist dài.</div>
+    <label class="check all"><input id="spotify-all" type="checkbox" checked> Chọn tất cả</label>
+    <ol class="items"></ol>
+  </section>
+
+  <section id="split-result" class="result" hidden>
+    <div class="batch-head">
+      <strong id="split-summary" role="status"></strong>
+      <div class="actions">
+        <button id="split-add" class="secondary" type="button">Thêm điểm cắt</button>
+      </div>
+    </div>
+    <audio id="split-audio" controls preload="metadata"></audio>
+    <div class="hint">Bấm ▶ để nghe từ đầu mỗi bài. Sửa giờ bắt đầu (phút:giây) hoặc tên bài nếu cần. Muốn thêm
+      điểm cắt: phát nhạc đến chỗ chuyển bài rồi bấm "Thêm điểm cắt". Bấm × để nối bài đó vào bài trước.</div>
+    <ol id="split-list" class="tracks"></ol>
+    <button id="split-cut" class="primary" type="button">Cắt và lưu</button>
+    <div id="split-status" class="status" role="status"></div>
+    <div class="result-actions">
+      <button id="split-open" class="secondary" type="button" hidden>Mở thư mục các bài</button>
+    </div>
+  </section>
+  <footer>Bokin Clip {{ version }} · yt-dlp {{ ytdlp_version }}</footer>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const form = $("form"), button = $("submit"), statusBox = $("status");
+  const CONCURRENCY = 3;  // số video / bài tải cùng lúc ở tab "Nhiều video" và "Spotify"
+  const LABELS = {
+    ready: "Chưa tải", waiting: "Đang chờ", working: "Đang tải…", done: "Xong", error: "Lỗi", stopped: "Đã dừng",
+  };
+  const MODES = ["one", "many", "split", "spotify"];
+  let mode = "one", kind = "video", objectUrl = null;
+  let lastSaved = "";  // file vừa lưu ở tab "Một video"
+
+  function extractLinks(text) {
+    return [...new Set(text.match(/https?:\/\/[^\s"'<>,]+/g) || [])];
+  }
+
+  // Mô tả việc sẽ làm, vd. "15 giây đầu", "nhạc MP3 cả bài", "nhạc 20 giây từ 1:30".
+  function describe() {
+    const start = $("start").value.trim();
+    const fromStart = start === "" || start === "0";
+    if (kind === "audio" && $("full").checked) return fromStart ? "nhạc MP3 cả bài" : `nhạc MP3 từ ${start} đến hết`;
+    const duration = $("duration").value || "{{ default_duration }}";
+    const what = fromStart ? `${duration} giây đầu` : `${duration} giây từ ${start}`;
+    return kind === "audio" ? `nhạc ${what}` : what;
+  }
+
+  function updateButton() {
+    const what = describe();
+    if (mode === "split") {
+      button.textContent = "Nhận diện các bài hát";
+    } else if (mode === "spotify") {
+      const left = spotifyLoaded() ? spotifyLeft().length : 0;
+      button.textContent = !spotifyLoaded() ? "Lấy danh sách bài"
+        : left ? `Tải ${left} bài đã chọn (MP3)` : "Đã tải xong các bài đã chọn";
+    } else if (mode === "one") {
+      button.textContent = `Tải ${what}`;
+    } else {
+      const count = extractLinks($("urls").value).length;
+      button.textContent = count ? `Tải ${what} của ${count} video` : `Tải ${what} của từng video`;
+      $("urls-count").textContent = count
+        ? `Nhận được ${count} link.`
+        : "Dán cả đoạn văn cũng được, app sẽ tự lọc ra các link.";
+    }
+  }
+  ["start", "duration", "urls", "spotify-url"].forEach((id) => $(id).addEventListener("input", updateButton));
+
+  function setKind(next) {
+    kind = next;
+    const audio = kind === "audio";
+    $("kind-video").setAttribute("aria-checked", !audio);
+    $("kind-audio").setAttribute("aria-checked", audio);
+    $("quality-field").hidden = audio;  // nhạc không có độ phân giải
+    $("time-row").classList.toggle("two", audio);
+    $("precise-label").hidden = audio;  // nhạc luôn được cắt chính xác
+    $("full-label").hidden = !audio;
+    $("duration").disabled = audio && $("full").checked;
+    updateButton();
+    try { localStorage.setItem("bokin-kind", kind); } catch {}
+  }
+  $("kind-video").addEventListener("click", () => setKind("video"));
+  $("kind-audio").addEventListener("click", () => setKind("audio"));
+  $("full").addEventListener("change", () => setKind(kind));
+
+  function setMode(next) {
+    mode = next;
+    MODES.forEach((name) => $(`tab-${name}`).setAttribute("aria-selected", mode === name));
+    $("one-input").hidden = mode !== "one";
+    $("many-input").hidden = mode !== "many";
+    $("split-fields").hidden = mode !== "split";
+    $("spotify-input").hidden = mode !== "spotify";
+    $("download-options").hidden = mode === "split" || mode === "spotify";
+    $("split-result").hidden = mode !== "split" || !split;
+    $("url").required = mode === "one";
+    $("urls").required = mode === "many";
+    $("spotify-url").required = mode === "spotify";
+    $("result").hidden = mode !== "one" || !objectUrl;
+    $("batch").hidden = mode !== "many" || !many.items.length;
+    $("spotify-result").hidden = mode !== "spotify" || !spotifyBatch.items.length;
+    statusBox.textContent = "";
+    updateButton();
+    try { localStorage.setItem("bokin-mode", mode); } catch {}
+  }
+  MODES.forEach((name) => $(`tab-${name}`).addEventListener("click", () => setMode(name)));
+
+  function options() {
+    return {
+      kind,
+      start: $("start").value,
+      duration: $("duration").value,
+      full: $("full").checked,
+      quality: $("quality").value,
+      precise: $("precise").checked,
+    };
+  }
+
+  async function postJson(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return response;
+  }
+
+  async function errorFrom(response) {
+    const data = await response.json().catch(() => ({}));
+    return new Error(data.error || `Lỗi máy chủ (${response.status})`);
+  }
+
+  function filenameFrom(response) {
+    const header = response.headers.get("Content-Disposition") || "";
+    const star = header.match(/filename\*=UTF-8''([^;]+)/i);
+    if (star) return decodeURIComponent(star[1]);
+    const plain = header.match(/filename="?([^";]+)"?/i);
+    return plain ? plain[1] : "clip.mp4";
+  }
+
+  async function downloadOne() {
+    statusBox.textContent = kind === "audio" ? "Đang tải nhạc…" : "Đang tải đoạn video…";
+    const began = performance.now();
+    const response = await postJson("/api/clip", { url: $("url").value, ...options() });
+    if (!response.ok) throw await errorFrom(response);
+    const blob = await response.blob();
+    const name = filenameFrom(response);
+    $("saved-path").textContent = decodeURIComponent(response.headers.get("X-Saved-Path") || name);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(blob);
+
+    const isAudio = blob.type.startsWith("audio/") || name.toLowerCase().endsWith(".mp3");
+    const [show, hide] = isAudio ? [$("preview-audio"), $("preview-video")] : [$("preview-video"), $("preview-audio")];
+    hide.pause();
+    hide.removeAttribute("src");
+    hide.hidden = true;
+    show.src = objectUrl;
+    show.hidden = false;
+    lastSaved = decodeURIComponent(response.headers.get("X-Saved-Path") || "");
+    $("split-this").hidden = !isAudio || !lastSaved;
+    const link = $("download");
+    link.href = objectUrl;
+    link.download = name;
+    $("result").hidden = false;
+
+    const seconds = ((performance.now() - began) / 1000).toFixed(1);
+    statusBox.textContent = `Xong sau ${seconds} giây (${(blob.size / 1048576).toFixed(1)} MB).`;
+  }
+
+  // ---- Danh sách tải hàng loạt (tab "Nhiều video" và "Spotify"): mỗi mục một request, CONCURRENCY mục cùng lúc ----
+
+  function setItem(item, state, detail = "") {
+    item.state = state;
+    item.el.dataset.state = state;
+    item.el.querySelector(".badge").textContent = LABELS[state];
+    item.el.querySelector(".item-detail").textContent = detail;
+  }
+
+  // send(item, context) tải một mục và trả về {title?, detail, path}; context() chụp lại tuỳ chọn lúc bắt đầu.
+  function createBatch(section, { noun, send, context = () => ({}), selectable = false, onChange = () => {} }) {
+    const q = (selector) => section.querySelector(selector);
+    const batch = { items: [], running: false };
+    let stopRequested = false, began = 0;
+
+    batch.render = (entries) => {  // entries: [{title, detail?, ...dữ liệu riêng của mục}]
+      q(".items").replaceChildren();
+      batch.items = entries.map((entry) => {
+        const el = document.createElement("li");
+        el.className = "item";
+        el.innerHTML = (selectable ? '<input type="checkbox" class="pick" checked>' : "")
+          + '<span class="badge"></span><div class="item-body"><div class="item-title"></div><div class="item-detail"></div></div>';
+        el.querySelector(".item-title").textContent = entry.title;
+        const item = { ...entry, el };
+        if (selectable) {
+          el.querySelector(".pick").addEventListener("change", (event) => {
+            el.classList.toggle("off", !event.target.checked);
+            onChange();
+          });
+        }
+        setItem(item, "ready", entry.detail || "");
+        q(".items").append(el);
+        return item;
+      });
+      q(".retry").hidden = q(".stop").hidden = true;
+      section.hidden = false;
+    };
+
+    batch.chosen = () => batch.items.filter((item) => !selectable || item.el.querySelector(".pick").checked);
+    batch.selectAll = (on) => batch.items.forEach((item) => {
+      item.el.querySelector(".pick").checked = on;
+      item.el.classList.toggle("off", !on);
+    });
+
+    batch.summary = (text) => { q(".batch-summary").textContent = text; };
+
+    function updateSummary() {
+      const count = (state) => batch.items.filter((item) => item.state === state).length;
+      const done = count("done"), failed = count("error"), stopped = count("stopped");
+      const total = done + failed + stopped + count("waiting") + count("working");
+      let text;
+      if (batch.running) {
+        text = `Đang tải… ${done + failed}/${total}`;
+      } else {
+        const seconds = ((performance.now() - began) / 1000).toFixed(1);
+        text = `Xong ${done}/${total} ${noun} sau ${seconds} giây`;
+        if (failed) text += ` · ${failed} lỗi`;
+        if (stopped) text += ` · ${stopped} đã dừng`;
+      }
+      batch.summary(text);
+      q(".retry").hidden = batch.running || !(failed + stopped);
+      q(".stop").hidden = !batch.running;
+      section.querySelectorAll(".pick").forEach((pick) => { pick.disabled = batch.running; });
+    }
+
+    batch.run = async (queue) => {
+      const ctx = context();  // giữ nguyên tuỳ chọn trong suốt lượt tải
+      began = performance.now();
+      batch.running = true;
+      stopRequested = false;
+      q(".stop").disabled = false;
+      batch.items.forEach((item) => { if (item.state !== "done" && !queue.includes(item)) setItem(item, "ready", item.detail || ""); });
+      queue.forEach((item) => setItem(item, "waiting"));
+      updateSummary();
+
+      async function worker() {
+        while (queue.length && !stopRequested) {
+          const item = queue.shift();
+          setItem(item, "working");
+          try {
+            const result = await send(item, ctx);
+            if (result.title) item.el.querySelector(".item-title").textContent = result.title;
+            item.el.title = result.path || "";
+            setItem(item, "done", result.detail);
+          } catch (error) {
+            setItem(item, "error", error.message);
+          }
+          updateSummary();
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+      queue.forEach((item) => setItem(item, "stopped"));  // còn lại do bấm Dừng
+      batch.running = false;
+      updateSummary();
+      onChange();
+    };
+
+    q(".stop").addEventListener("click", () => {
+      stopRequested = true;
+      q(".stop").disabled = true;
+    });
+
+    q(".retry").addEventListener("click", async () => {
+      q(".retry").hidden = true;
+      button.disabled = true;
+      await batch.run(batch.items.filter((item) => item.state === "error" || item.state === "stopped"));
+      button.disabled = false;
+    });
+
+    return batch;
+  }
+
+  // Tab "Nhiều video": mỗi link một request /api/save.
+  const many = createBatch($("batch"), {
+    noun: "video",
+    context: options,
+    send: async (item, opts) => {
+      const response = await postJson("/api/save", { url: item.url, ...opts });
+      if (!response.ok) throw await errorFrom(response);
+      const data = await response.json();
+      return { title: data.title, path: data.path, detail: `${data.file} · ${(data.size / 1048576).toFixed(1)} MB` };
+    },
+  });
+
+  async function downloadMany() {
+    const urls = extractLinks($("urls").value);
+    if (!urls.length) throw new Error("Không tìm thấy link nào. Mỗi link cần bắt đầu bằng http:// hoặc https://");
+    many.render(urls.map((url) => ({ title: url, url })));
+    await many.run([...many.items]);
+  }
+
+  // ---- Tab "Tách bài": phân tích file, xem lại / sửa danh sách bài, rồi cắt ----
+
+  const METHODS = {
+    chapters: "theo các chương có trong file",
+    silence: "theo khoảng lặng giữa các bài",
+    none: "chưa thấy điểm chuyển bài nào, hãy thêm điểm cắt bằng tay",
+  };
+  let split = null;        // {id, name, duration, method, rows: [{start, title, include}]}
+  let splitUpload = null;  // file chọn qua hộp chọn của trình duyệt (khi không chạy trong cửa sổ app)
+  let splitFolder = "";
+
+  function fmtTime(seconds) {
+    let rest = Math.round(seconds * 10) / 10;
+    const h = Math.floor(rest / 3600);
+    rest -= h * 3600;
+    const m = Math.floor(rest / 60);
+    const s = Math.round((rest - m * 60) * 10) / 10;
+    const ss = (s < 10 ? "0" : "") + (Number.isInteger(s) ? s : s.toFixed(1));
+    return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  }
+
+  function parseTime(text) {
+    const parts = String(text).trim().split(":");
+    if (parts.some((part) => part.trim() === "" || isNaN(Number(part)))) return NaN;
+    return parts.reduce((total, part) => total * 60 + Number(part), 0);
+  }
+
+  function renderSplit() {
+    const list = $("split-list");
+    list.replaceChildren();
+    split.rows.sort((a, b) => a.start - b.start);
+    split.rows.forEach((row, i) => {
+      const end = i + 1 < split.rows.length ? split.rows[i + 1].start : split.duration;
+      const li = document.createElement("li");
+      li.className = row.include ? "track" : "track off";
+      li.innerHTML = '<input type="checkbox" class="t-on" title="Lấy bài này"><span class="num"></span>'
+        + '<input class="t-start" title="Bắt đầu (phút:giây)" spellcheck="false">'
+        + '<input class="t-title" placeholder="Tên bài" spellcheck="false"><span class="len"></span>'
+        + '<button type="button" class="icon t-play" title="Nghe từ đầu bài này">▶</button>'
+        + '<button type="button" class="icon t-del" title="Bỏ điểm cắt này (nối vào bài trước)">×</button>';
+      const q = (selector) => li.querySelector(selector);
+      q(".t-on").checked = row.include;
+      q(".num").textContent = String(i + 1).padStart(2, "0");
+      q(".t-start").value = fmtTime(row.start);
+      q(".t-title").value = row.title;
+      q(".len").textContent = fmtTime(end - row.start);
+      q(".t-on").addEventListener("change", (event) => {
+        row.include = event.target.checked;
+        li.className = row.include ? "track" : "track off";
+        updateSplitSummary();
+      });
+      q(".t-start").addEventListener("change", (event) => {
+        const value = parseTime(event.target.value);
+        const valid = !isNaN(value) && value >= 0 && value < split.duration;
+        event.target.classList.toggle("invalid", !valid);
+        if (valid) {
+          row.start = value;
+          renderSplit();
+        }
+      });
+      q(".t-title").addEventListener("input", (event) => { row.title = event.target.value; });
+      q(".t-play").addEventListener("click", () => {
+        const audio = $("split-audio");
+        audio.currentTime = row.start;
+        audio.play().catch(() => {});
+      });
+      q(".t-del").addEventListener("click", () => {
+        if (split.rows.length < 2) return;
+        split.rows.splice(i, 1);
+        renderSplit();
+      });
+      list.append(li);
+    });
+    updateSplitSummary();
+  }
+
+  function updateSplitSummary() {
+    const chosen = split.rows.filter((row) => row.include).length;
+    $("split-summary").textContent = `${split.rows.length} bài, ${METHODS[split.method] || ""}`;
+    $("split-cut").textContent = `Cắt và lưu ${chosen} bài`;
+    $("split-cut").disabled = !chosen;
+  }
+
+  async function analyzeSplit() {
+    const opts = { min_track: $("split-min").value, sensitivity: $("split-sens").value };
+    const path = $("split-path").value.trim();
+    let response;
+    if (splitUpload && path === splitUpload.name) {
+      statusBox.textContent = "Đang gửi file và phân tích…";
+      const form = new FormData();
+      form.append("file", splitUpload);
+      Object.entries(opts).forEach(([key, value]) => form.append(key, value));
+      response = await fetch("/api/split/analyze", { method: "POST", body: form });
+    } else {
+      if (!path) throw new Error("Hãy chọn file nhạc cần tách.");
+      statusBox.textContent = "Đang phân tích… (file dài 1 tiếng mất khoảng 10-30 giây)";
+      response = await postJson("/api/split/analyze", { path, ...opts });
+    }
+    if (!response.ok) throw await errorFrom(response);
+    const data = await response.json();
+    split = {
+      id: data.id, name: data.name, duration: data.duration, method: data.method,
+      rows: data.tracks.map((track) => ({ start: track.start, title: track.title, include: true })),
+    };
+    $("split-audio").src = `/api/split/${data.id}/audio`;
+    $("split-status").textContent = "";
+    $("split-open").hidden = true;
+    $("split-result").hidden = false;
+    renderSplit();
+    statusBox.textContent = `Tìm thấy ${split.rows.length} bài trong "${data.name}" (dài ${fmtTime(data.duration)}).`;
+  }
+
+  $("split-choose").addEventListener("click", async () => {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.choose_file) {
+      const current = $("split-path").value.trim();
+      const picked = await window.pywebview.api.choose_file(current.replace(/[\\/][^\\/]*$/, "") || $("folder").value);
+      if (picked) {
+        $("split-path").value = picked;
+        splitUpload = null;
+      }
+    } else {
+      $("split-file").click();
+    }
+  });
+  $("split-file").addEventListener("change", () => {
+    const file = $("split-file").files[0];
+    if (file) {
+      splitUpload = file;
+      $("split-path").value = file.name;
+    }
+  });
+
+  $("split-this").addEventListener("click", () => {
+    setMode("split");
+    $("split-path").value = lastSaved;
+    splitUpload = null;
+    form.requestSubmit();
+  });
+
+  $("split-add").addEventListener("click", () => {
+    const audio = $("split-audio");
+    let at = audio.currentTime;
+    if (!(at > 0) || split.rows.some((row) => Math.abs(row.start - at) < 1)) {
+      // Chưa phát nhạc: cắt đôi bài dài nhất.
+      let best = 0, bestLength = -1;
+      split.rows.forEach((row, i) => {
+        const length = (i + 1 < split.rows.length ? split.rows[i + 1].start : split.duration) - row.start;
+        if (length > bestLength) { best = i; bestLength = length; }
+      });
+      at = split.rows[best].start + bestLength / 2;
+    }
+    split.rows.push({ start: Math.round(at * 10) / 10, title: "", include: true });
+    renderSplit();
+  });
+
+  $("split-cut").addEventListener("click", async () => {
+    if (!(await applyFolder())) return;
+    const cut = $("split-cut"), splitStatus = $("split-status");
+    cut.disabled = true;
+    splitStatus.className = "status";
+    splitStatus.textContent = "Đang cắt…";
+    try {
+      const response = await postJson(`/api/split/${split.id}/cut`, {
+        tracks: split.rows.map((row) => ({ start: row.start, title: row.title, include: row.include })),
+      });
+      if (!response.ok) throw await errorFrom(response);
+      const data = await response.json();
+      splitFolder = data.folder;
+      splitStatus.textContent = `Đã lưu ${data.files.length} bài vào ${data.folder}`;
+      $("split-open").hidden = false;
+    } catch (error) {
+      splitStatus.className = "status error";
+      splitStatus.textContent = error.message;
+    } finally {
+      updateSplitSummary();
+    }
+  });
+
+  $("split-open").addEventListener("click", async () => {
+    const response = await postJson("/api/open-folder", { path: splitFolder });
+    if (!response.ok) $("split-status").textContent = (await errorFrom(response)).message;
+  });
+
+  // ---- Tab "Spotify": lấy danh sách bài từ link, rồi tìm và tải từng bài trên YouTube ----
+
+  let spotifyList = null;  // {url, kind, name, folder, tracks}
+
+  const spotifyBatch = createBatch($("spotify-result"), {
+    noun: "bài",
+    selectable: true,
+    onChange: () => {
+      $("spotify-all").checked = spotifyBatch.items.every((item) => item.el.querySelector(".pick").checked);
+      updateButton();
+    },
+    context: () => ({ folder: spotifyList.folder }),
+    send: async (item, ctx) => {
+      const response = await postJson("/api/spotify/track", { track: item.track, ...ctx });
+      if (!response.ok) throw await errorFrom(response);
+      const data = await response.json();
+      const from = data.youtube_channel ? `${data.youtube_title} (${data.youtube_channel})` : data.youtube_title;
+      return { path: data.path, detail: `Đã lưu · nhạc lấy từ YouTube: ${from}` };
+    },
+  });
+
+  const spotifyLoaded = () => !!spotifyList && spotifyList.url === $("spotify-url").value.trim();
+  const spotifyLeft = () => spotifyBatch.chosen().filter((item) => item.state !== "done");
+
+  async function loadSpotify() {
+    statusBox.textContent = "Đang đọc danh sách bài từ Spotify…";
+    const url = $("spotify-url").value.trim();
+    const response = await postJson("/api/spotify/list", { url });
+    if (!response.ok) throw await errorFrom(response);
+    const data = await response.json();
+    spotifyList = { ...data, url };
+    spotifyBatch.render(data.tracks.map((track) => ({
+      title: track.artists ? `${track.artists} - ${track.title}` : track.title,
+      detail: track.duration ? fmtTime(track.duration) : "",
+      track,
+    })));
+    const what = { track: "Bài hát", album: "Album", playlist: "Playlist" }[data.kind] || "";
+    spotifyBatch.summary(data.kind === "track" ? what : `${what} "${data.name}" · ${data.tracks.length} bài`);
+    $("spotify-all").checked = true;
+    $("spotify-all").closest("label").hidden = data.tracks.length < 2;
+    $("spotify-limited").hidden = !data.limited;
+    statusBox.textContent = data.tracks.length > 1
+      ? "Bỏ chọn các bài không cần rồi bấm nút tải bên trên." : "";
+    updateButton();
+  }
+
+  async function downloadSpotify() {
+    if (!spotifyLoaded()) {
+      await loadSpotify();
+      if (spotifyList.tracks.length > 1) return;  // cho người dùng chọn bài trước; một bài thì tải luôn
+    }
+    const queue = spotifyLeft();
+    if (!queue.length) {
+      throw new Error(spotifyBatch.chosen().length ? "Các bài đã chọn đều đã tải xong." : "Hãy chọn ít nhất một bài.");
+    }
+    statusBox.textContent = "";
+    await spotifyBatch.run(queue);
+  }
+
+  $("spotify-all").addEventListener("change", (event) => {
+    spotifyBatch.selectAll(event.target.checked);
+    updateButton();
+  });
+
+  $("spotify-open").addEventListener("click", async () => {
+    if (!(await applyFolder())) return;
+    const path = spotifyList && spotifyList.folder ? `${savedFolder}/${spotifyList.folder}` : "";
+    const response = await postJson("/api/open-folder", path ? { path } : {});
+    if (!response.ok) statusBox.textContent = (await errorFrom(response)).message;
+  });
+
+  // ---- Thư mục lưu (dùng chung cho các tab, server nhớ cho các lần sau) ----
+
+  let savedFolder = $("folder").value;
+
+  function folderMessage(text, isError = false) {
+    $("folder-status").textContent = text;
+    $("folder-status").className = isError ? "hint folder-status error" : "hint folder-status";
+  }
+
+  async function useFolderResponse(response) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Lỗi máy chủ (${response.status})`);
+    if (data.cancelled) return;
+    $("folder").value = savedFolder = data.folder;
+    folderMessage("Đã đổi thư mục lưu.");
+  }
+
+  // Áp dụng đường dẫn đang gõ trong ô (nếu đã đổi); trả về false nếu đường dẫn không dùng được.
+  async function applyFolder() {
+    if ($("folder").value.trim() === savedFolder) return true;
+    try {
+      await useFolderResponse(await postJson("/api/folder", { folder: $("folder").value }));
+      return true;
+    } catch (error) {
+      folderMessage(error.message, true);
+      return false;
+    }
+  }
+  $("folder").addEventListener("change", applyFolder);
+  $("folder").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); applyFolder(); }
+  });
+
+  $("choose-folder").addEventListener("click", async () => {
+    $("choose-folder").disabled = true;
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        // Trong cửa sổ app (desktop.py): dùng hộp thoại chọn thư mục của Windows.
+        const picked = await window.pywebview.api.choose_folder($("folder").value);
+        if (picked) await useFolderResponse(await postJson("/api/folder", { folder: picked }));
+        return;
+      }
+      folderMessage("Đang mở hộp thoại chọn thư mục (có thể nằm sau cửa sổ trình duyệt)…");
+      await useFolderResponse(await postJson("/api/choose-folder", {}));
+      if ($("folder-status").textContent.startsWith("Đang mở")) folderMessage("");
+    } catch (error) {
+      folderMessage(error.message, true);
+    } finally {
+      $("choose-folder").disabled = false;
+    }
+  });
+
+  async function openFolder() {
+    if (!(await applyFolder())) return;
+    const response = await postJson("/api/open-folder", {});
+    if (!response.ok) folderMessage((await errorFrom(response)).message, true);
+  }
+  $("open-folder").addEventListener("click", openFolder);
+  document.querySelectorAll(".open-folder").forEach((el) => el.addEventListener("click", openFolder));
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    statusBox.className = "status";
+    statusBox.textContent = "";
+    try {
+      if (!(await applyFolder())) throw new Error("Thư mục lưu không dùng được, xem thông báo ở ô \"Lưu vào\".");
+      await ({ one: downloadOne, many: downloadMany, split: analyzeSplit, spotify: downloadSpotify })[mode]();
+    } catch (error) {
+      statusBox.className = "status error";
+      statusBox.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  // Báo cho app biết trang vẫn đang mở (khi chạy bằng trình duyệt, app tự tắt sau khi trang đóng).
+  setInterval(() => fetch("/api/ping").catch(() => {}), 30000);
+
+  let savedMode = "one", savedKind = "video";
+  try {
+    savedMode = localStorage.getItem("bokin-mode") || "one";
+    savedKind = localStorage.getItem("bokin-kind") || "video";
+  } catch {}
+  setKind(savedKind === "audio" ? "audio" : "video");
+  setMode(MODES.includes(savedMode) ? savedMode : "one");
+</script>
+</body>
+</html>
