@@ -9,6 +9,8 @@ Chạy:  python app.py   rồi mở http://127.0.0.1:8765  (thêm --open để t
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import json
 import logging
 import mimetypes
@@ -28,6 +30,7 @@ import yt_dlp.version
 from flask import Flask, jsonify, render_template, request, send_file
 
 import splitter
+import spotify
 
 from clipper import (
     DEFAULT_DURATION,
@@ -40,7 +43,7 @@ from clipper import (
     validate_youtube_url,
 )
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 SETTINGS_FILE = Path(__file__).with_name("settings.json")
 NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
@@ -106,6 +109,8 @@ def _flag(value) -> bool:
 
 
 def _clip_options(data) -> tuple[str, dict]:
+    if spotify.is_spotify_link(data.get("url", "")):
+        raise ClipError("Đây là link Spotify: hãy dán vào tab Spotify.")
     url = validate_youtube_url(data.get("url", ""))
     try:
         quality = int(data.get("quality") or DEFAULT_QUALITY)
@@ -124,17 +129,24 @@ def _clip_options(data) -> tuple[str, dict]:
     }
 
 
-def _download_to_output(data):
-    """Tải đoạn video rồi chuyển vào OUTPUT_DIR. Trả về (đường dẫn file, Clip)."""
+@contextlib.contextmanager
+def _downloading():
+    """Đánh dấu đang tải, để app chạy trong trình duyệt không tự tắt giữa chừng."""
     global _active_downloads
-    url, options = _clip_options(data)
     with _activity_lock:
         _active_downloads += 1
     try:
-        return _download_and_move(url, options)
+        yield
     finally:
         with _activity_lock:
             _active_downloads -= 1
+
+
+def _download_to_output(data):
+    """Tải đoạn video rồi chuyển vào OUTPUT_DIR. Trả về (đường dẫn file, Clip)."""
+    url, options = _clip_options(data)
+    with _downloading():
+        return _download_and_move(url, options)
 
 
 def _download_and_move(url: str, options: dict):
@@ -424,6 +436,36 @@ def split_cut(token):
     except OSError as e:
         return jsonify(error=f"Không lưu được vào {out_dir}: {e.strerror or e}"), 400
     return jsonify(folder=str(out_dir), files=[file.name for file in files])
+
+
+# --- Tab "Spotify": đọc danh sách bài từ link Spotify, rồi tải từng bài (nguồn nhạc: YouTube) ----------
+
+@app.post("/api/spotify/list")
+def spotify_list():
+    try:
+        playlist = spotify.fetch_list((request.get_json(silent=True) or {}).get("url", ""))
+    except ClipError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(kind=playlist.kind, name=playlist.name, folder=playlist.folder,
+                   limited=playlist.kind == "playlist" and len(playlist.tracks) >= spotify.EMBED_LIMIT,
+                   tracks=[dataclasses.asdict(track) for track in playlist.tracks])
+
+
+@app.post("/api/spotify/track")
+def spotify_track():
+    data = request.get_json(silent=True) or {}
+    # Thư mục con của album/playlist: chỉ lấy tên (không cho đi ra ngoài thư mục lưu).
+    out_dir = OUTPUT_DIR / splitter.safe_filename(str(data.get("folder") or ""))
+    try:
+        track = spotify.track_from_dict(data.get("track"))
+        with _downloading():
+            target, source = spotify.download_track(track, out_dir)
+    except ClipError as e:
+        return jsonify(error=str(e)), 400
+    except OSError as e:
+        return jsonify(error=f"Không lưu được file vào {out_dir}: {e.strerror or e}"), 400
+    return jsonify(file=target.name, path=str(target), folder=str(target.parent), size=target.stat().st_size,
+                   youtube_url=source["url"], youtube_title=source["title"], youtube_channel=source["channel"])
 
 
 if __name__ == "__main__":

@@ -63,6 +63,21 @@ jobs:
           build\app\python\python.exe build\app\clipper.py "https://www.youtube.com/watch?v=jNQXAC9IVRw" -d 5 -o build\yt-test 2>&1 | Tee-Object build\youtube-test.log
           exit $LASTEXITCODE
 
+      - name: Thử đọc Spotify thật và tìm bài trên YouTube (chỉ để tham khảo)
+        id: spotify
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          $py = "build\app\python\python.exe"
+          & $py build\app\spotify.py --find "https://open.spotify.com/album/2noRn2Aes5aoNVsU6iWThc" 2>&1 | Tee-Object build\spotify-test.log
+          $found = $LASTEXITCODE
+          & $py build\app\spotify.py --list "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M" 2>&1 | Tee-Object -Append build\spotify-test.log
+          $listed = $LASTEXITCODE
+          & $py build\app\spotify.py "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT" -o build\sp-test 2>&1 | Tee-Object -Append build\spotify-test.log
+          if ($found -ne 0 -or $listed -ne 0) { exit 1 }
+          exit $LASTEXITCODE
+
       - name: Đóng gói bộ cài (Inno Setup)
         shell: pwsh
         run: |
@@ -110,6 +125,9 @@ jobs:
           "== Tải YouTube thật: ${{ steps.youtube.outcome }}"
           Get-Content build\youtube-test.log -ErrorAction SilentlyContinue | Select-Object -Last 40
           Get-ChildItem build\yt-test -ErrorAction SilentlyContinue | Format-Table Name, Length
+          "== Spotify: ${{ steps.spotify.outcome }}"
+          Get-Content build\spotify-test.log -ErrorAction SilentlyContinue | Select-Object -Last 120
+          Get-ChildItem build\sp-test -Recurse -File -ErrorAction SilentlyContinue | Format-Table Name, Length
 
       - name: Tạo GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')

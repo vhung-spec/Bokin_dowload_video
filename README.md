@@ -1,7 +1,8 @@
 # Bokin Clip: tải nhanh video và nhạc YouTube
 
 Dán link YouTube, bấm nút, nhận file `.mp4` của 15 giây đầu (hoặc bất kỳ đoạn nào bạn chọn), hoặc
-file nhạc `.mp3` của cả bài / một đoạn.
+file nhạc `.mp3` của cả bài / một đoạn. Dán link bài hát, album hay playlist Spotify để lấy MP3
+của từng bài.
 
 **Vì sao nhanh?** App không tải cả video rồi mới cắt. [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 lấy link stream, app đọc bảng mục lục ở đầu stream rồi chỉ tải đúng các khúc chứa đoạn cần
@@ -128,6 +129,30 @@ Sau khi tải nhạc ở tab **Một video**, nút **Tách bài trong file này*
 Nhạc mix nối liền không có khoảng lặng giữa các bài (kiểu DJ mix) thì app không tự tìm được điểm
 chuyển bài; khi đó hãy thêm điểm cắt bằng tay như ở bước 3.
 
+### Tải nhạc từ link Spotify
+
+Tab **Spotify** nhận link bài hát, album hoặc playlist Spotify (bấm **Chia sẻ → Sao chép liên kết**
+trong Spotify, kể cả link rút gọn `spotify.link`):
+
+1. Dán link rồi bấm **Lấy danh sách bài**. Link một bài thì app tải luôn.
+2. Album/playlist: bỏ tick các bài không cần (hoặc **Chọn tất cả**), rồi bấm **Tải N bài đã
+   chọn (MP3)**. App tải 3 bài cùng lúc; bấm **Dừng** hoặc **Tải lại bài lỗi** như tab Nhiều video.
+3. Mỗi bài được lưu thành `Nghệ sĩ - Tên bài.mp3`, có sẵn tên bài, nghệ sĩ, album, số thứ tự và
+   ảnh bìa theo Spotify. Album/playlist được lưu vào thư mục con mang tên album/playlist bên
+   trong thư mục lưu.
+
+**Nhạc lấy từ đâu?** Nhạc trên Spotify được mã hoá (DRM) nên app không tải từ Spotify và không
+phá khoá. App chỉ đọc thông tin công khai của bài (tên, nghệ sĩ, thời lượng, ảnh bìa) từ trang
+nhúng của Spotify, rồi tìm đúng bài đó trên YouTube (giống công cụ mã nguồn mở
+[spotDL](https://github.com/spotDL/spotify-downloader)): ưu tiên bản thu âm gốc (kênh
+"… - Topic" của YouTube Music), thời lượng khớp với Spotify, tên bài trùng; tránh bản live,
+cover, remix, sped up, karaoke… (trừ khi chính bài trên Spotify là bản đó). Mỗi bài trong danh
+sách ghi rõ video YouTube đã dùng để bạn kiểm tra; bản tìm được có thể khác bản trên Spotify một
+chút (vd. MV có đoạn mở đầu).
+
+Giới hạn: không cần tài khoản Spotify, nhưng playlist riêng tư thì không đọc được, và với playlist
+dài Spotify chỉ cho xem 100 bài đầu. Chưa hỗ trợ link nghệ sĩ và podcast.
+
 ## Dùng dòng lệnh
 
 ```bash
@@ -138,6 +163,8 @@ python clipper.py "https://youtu.be/ID_1" "https://youtu.be/ID_2"          # nhi
 python clipper.py --file danh-sach.txt                                     # link trong file .txt
 python clipper.py "https://youtu.be/VIDEO_ID" --audio                       # nhạc MP3 cả bài
 python clipper.py "https://youtu.be/VIDEO_ID" --audio -s 1:00 -d 30         # nhạc 30 giây từ phút 1:00
+python spotify.py "https://open.spotify.com/album/ALBUM_ID"                 # MP3 từng bài của album Spotify
+python spotify.py --find "https://open.spotify.com/playlist/PLAYLIST_ID"    # chỉ xem bài YouTube tìm được
 ```
 
 ## Chạy test
@@ -163,6 +190,13 @@ cục bộ.
 - **`Address already in use` / cổng 8765 bị chiếm**: chạy `PORT=8766 python app.py`, hoặc trên
   Windows `set PORT=8766` rồi `python app.py`.
 
+- **Spotify: `Không đọc được thông tin bài hát từ Spotify`**: Spotify vừa đổi trang nhúng; hãy
+  cập nhật app lên bản mới. **`Spotify không tìm thấy...`**: link sai, bài đã bị gỡ, hoặc playlist
+  đang để riêng tư (hãy chuyển playlist sang công khai).
+- **Spotify: bài tải về không đúng bản** (vd. bản live, MV có lời dẫn): xem dòng "nhạc lấy từ
+  YouTube" của bài đó, rồi tải bản đúng bằng tab **Một video** (chọn Nhạc MP3) với link YouTube
+  bạn muốn.
+
 - **`Máy chưa có tkinter nên không mở được hộp thoại chọn thư mục`**: gõ hoặc dán đường dẫn
   vào ô "Lưu vào" thay cho nút **Chọn…**. Python cài từ python.org (Windows, macOS) có sẵn
   tkinter; trên Linux cài thêm gói `python3-tk`.
@@ -171,3 +205,5 @@ cục bộ.
 
 Chỉ tải nội dung mà bạn có quyền sử dụng (video của chính bạn, video có giấy phép Creative
 Commons, ...) và tuân thủ [Điều khoản dịch vụ của YouTube](https://www.youtube.com/t/terms).
+Tab Spotify cũng vậy: app chỉ dùng thông tin công khai của Spotify để tìm bài, nhạc vẫn tải từ
+YouTube; hãy chỉ tải nhạc bạn được phép dùng.
