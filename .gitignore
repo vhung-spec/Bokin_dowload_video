@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+downloads/
+settings.json
+build/
+dist/
+webview-data/
+bokin.log
+packaging/windows/Vietnamese.isl
