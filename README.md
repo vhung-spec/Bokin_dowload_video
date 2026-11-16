@@ -76,10 +76,11 @@ Mở <http://127.0.0.1:8765>, dán link rồi bấm **Tải 15 giây đầu**. F
 Các tuỳ chọn:
 
 - **Bắt đầu**: thời điểm bắt đầu, nhập số giây (`90`) hoặc `mm:ss` (`1:30`). Mặc định `0`.
-- **Độ dài**: số giây cần lấy. Mặc định `15`, tối đa `300`.
+- **Độ dài**: số giây cần lấy, gõ số bất kỳ từ `1` đến `300` (mặc định `15`). App nhớ số giây
+  bạn dùng lần trước.
 - **Tải về**: **Video (MP4)** hoặc **Nhạc (MP3)**.
-  - Nhạc mặc định tải **cả bài** (tick "Tải cả bài"). Bỏ tick để chỉ lấy một đoạn theo "Bắt đầu" và
-    "Độ dài".
+  - Nhạc mặc định tải **cả bài** (tick "Tải cả bài"). Muốn lấy một đoạn thì gõ số giây vào ô
+    "Độ dài" (app tự bỏ tick "Tải cả bài"), hoặc bỏ tick rồi chỉnh "Bắt đầu" và "Độ dài".
   - Nhạc chỉ tải stream âm thanh (không tải hình), lưu MP3 192 kbps, có sẵn tên bài và kênh trong
     thông tin file.
 - **Chất lượng** (chỉ với video): 360p, 480p, 720p hoặc 1080p. Chất lượng thấp hơn thì tải nhanh hơn.

@@ -40,7 +40,7 @@
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
     .row.two { grid-template-columns: repeat(2, 1fr); }
-    input:disabled { opacity: .5; }
+    input:disabled, input.unused { opacity: .5; }
     .result audio { width: 100%; }
     .check { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: .875rem; }
     .check input { width: auto; }
@@ -199,7 +199,7 @@
       <div>
         <label for="duration">Độ dài (giây)</label>
         <input id="duration" name="duration" type="number" min="1" max="{{ max_duration }}" step="any"
-               value="{{ default_duration }}">
+               value="{{ default_duration }}" title="Từ 1 đến {{ max_duration }} giây">
       </div>
       <div id="quality-field">
         <label for="quality">Chất lượng</label>
@@ -341,13 +341,31 @@
     $("time-row").classList.toggle("two", audio);
     $("precise-label").hidden = audio;  // nhạc luôn được cắt chính xác
     $("full-label").hidden = !audio;
-    $("duration").disabled = audio && $("full").checked;
+    // Nhạc "cả bài" không dùng độ dài, nhưng ô vẫn sửa được: gõ số giây là chuyển sang tải một đoạn.
+    $("duration").classList.toggle("unused", audio && $("full").checked);
     updateButton();
-    try { localStorage.setItem("bokin-kind", kind); } catch {}
+    try {
+      localStorage.setItem("bokin-kind", kind);
+      localStorage.setItem("bokin-full", $("full").checked ? "1" : "0");
+    } catch {}
   }
   $("kind-video").addEventListener("click", () => setKind("video"));
   $("kind-audio").addEventListener("click", () => setKind("audio"));
   $("full").addEventListener("change", () => setKind(kind));
+
+  function useDuration() {
+    if (kind === "audio" && $("full").checked) {
+      $("full").checked = false;
+      setKind(kind);
+    }
+  }
+  $("duration").addEventListener("click", useDuration);
+  $("duration").addEventListener("input", useDuration);
+  $("duration").addEventListener("change", () => {
+    if ($("duration").checkValidity()) {
+      try { localStorage.setItem("bokin-duration", $("duration").value); } catch {}
+    }
+  });
 
   function setMode(next) {
     mode = next;
@@ -900,6 +918,9 @@
   try {
     savedMode = localStorage.getItem("bokin-mode") || "one";
     savedKind = localStorage.getItem("bokin-kind") || "video";
+    const savedDuration = Number(localStorage.getItem("bokin-duration"));
+    if (savedDuration >= 1 && savedDuration <= {{ max_duration }}) $("duration").value = savedDuration;
+    if (localStorage.getItem("bokin-full") === "0") $("full").checked = false;
   } catch {}
   setKind(savedKind === "audio" ? "audio" : "video");
   setMode(MODES.includes(savedMode) ? savedMode : "one");

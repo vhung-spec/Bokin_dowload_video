@@ -43,7 +43,7 @@ from clipper import (
     validate_youtube_url,
 )
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 SETTINGS_FILE = Path(__file__).with_name("settings.json")
 NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
